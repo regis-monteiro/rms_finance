@@ -152,7 +152,7 @@ export default function Cartoes() {
             {aba === 'compras' ? (
               compras.length === 0 ? <div className="empty" style={{ padding: 24 }}>Nenhuma compra nesta fatura.</div> :
               <table><thead><tr><th>Data</th><th>Estabelecimento</th><th>Grupo</th><th>Parcela</th><th className="r">Valor</th><th /></tr></thead>
-                <tbody>{compras.map(c => <tr key={c.id}><td>{dataBR(c.data_compra)}</td><td>{c.descricao}</td><td>{nomeG(c.grupo_id)}</td><td>{c.parcela || '·'}</td>
+                <tbody>{compras.map(c => <tr key={c.id}><td>{dataBR(c.data_compra)}</td><td>{c.descricao}</td><td>{nomeG(c.grupo_id)}</td><td style={{ whiteSpace: 'nowrap' }}>{c.parcela || '·'}</td>
                   <td className={'r ' + (Number(c.valor) < 0 ? 'pos' : '')}>{brl(c.valor)}</td>
                   <td className="r"><button className="btn ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => excluirCompra(c.id)}>Excluir</button></td></tr>)}</tbody></table>
             ) : (

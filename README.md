@@ -38,6 +38,7 @@ Aplicativo de controle financeiro interno da RMS Organização Contábil.
 
 - Versão 0.1: login, perfis, dashboard (saldos, contas a pagar, faturas), lançamentos e cadastros.
 - Versão 0.2: contas a pagar, cartões, beneficiários e usuários.
-- Próximas telas: contas a receber, DRE, comparativos e importação.
+- Versão 0.3: contas a receber, DRE, comparativos e resultado no dashboard.
+- Próxima tela: importação.
 
 Configuração: ver `docs/configuracao.md`.

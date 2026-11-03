@@ -13,6 +13,9 @@ import EmBreve from './pages/EmBreve';
 import Pagar from './pages/Pagar';
 import Cartoes from './pages/Cartoes';
 import Usuarios from './pages/Usuarios';
+import Receber from './pages/Receber';
+import DRE from './pages/DRE';
+import Comparativos from './pages/Comparativos';
 
 function App() {
   const { session, usuario, carregando } = useAuth();
@@ -28,10 +31,10 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="lancamentos" element={so(opera, <Lancamentos />)} />
         <Route path="pagar" element={so(opera, <Pagar />)} />
-        <Route path="receber" element={<EmBreve titulo="Contas a receber" />} />
+        <Route path="receber" element={<Receber />} />
         <Route path="cartoes" element={so(opera, <Cartoes />)} />
-        <Route path="dre" element={<EmBreve titulo="DRE / Análise do fluxo" />} />
-        <Route path="comparativos" element={<EmBreve titulo="Comparativos" />} />
+        <Route path="dre" element={<DRE />} />
+        <Route path="comparativos" element={<Comparativos />} />
         <Route path="cadastros" element={so(opera, <Cadastros />)} />
         <Route path="usuarios" element={so(dir, <Usuarios />)} />
         <Route path="importacao" element={so(dir, <EmBreve titulo="Importação" />)} />

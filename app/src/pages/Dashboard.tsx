@@ -5,6 +5,7 @@ import { useAuth, podeEditar } from '../lib/auth';
 import { brl, diaMes, hojeISO, somaDias, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
 import { useCadastros } from '../lib/useCadastros';
 import { Cabecalho } from '../components/Layout';
+import { carregarDRE, resultadoMensal, useLinhasDRE, linhaMensal, type PontoDRE, MESES_LONGOS } from '../lib/analises';
 
 interface Saldo { id: number; nome: string; tipo: string; saldo: number }
 interface Fatura { id: number; cartao: string; data_vencimento: string; total: number; pago: number }
@@ -16,10 +17,13 @@ export default function Dashboard() {
   const [saldos, setSaldos] = useState<Saldo[]>([]);
   const [abertos, setAbertos] = useState<Lancamento[]>([]);
   const [faturas, setFaturas] = useState<Fatura[]>([]);
-  const hoje = hojeISO(), fimMes = hoje.slice(0, 8) + '31';
+  const [dre, setDre] = useState<PontoDRE[]>([]);
+  const linhasDre = useLinhasDRE();
+  const hoje = hojeISO(), [anoH, mesH] = hoje.split('-').map(Number), fimMes = `${hoje.slice(0, 8)}${new Date(anoH, mesH, 0).getDate()}`;
 
   useEffect(() => {
     supabase.from('saldos_contas').select('*').order('ordem').then(({ data }) => setSaldos((data as Saldo[]) || []));
+    carregarDRE(anoH, null).then(setDre).catch(() => setDre([]));
     if (podeEditar(usuario?.perfil)) {
       supabase.from('lancamentos').select('*').eq('tipo', 'saida').neq('status', 'pago').lte('vencimento', fimMes).order('vencimento')
         .then(({ data }) => setAbertos((data as Lancamento[]) || []));
@@ -45,6 +49,19 @@ export default function Dashboard() {
           <div className="card kpi" key={s.id}><div className="lbl">{s.nome}<span className="tag">{TIPO[s.tipo]}</span></div><div className="val">{brl(s.saldo)}</div></div>
         ))}
       </div>
+
+      {linhasDre.length > 0 && (() => {
+        const res = resultadoMensal(dre, linhasDre, 'real'), rec = linhaMensal(dre, linhasDre.find(l => l.ordem === 10)?.id, 'real');
+        const m = mesH - 1, ant = m === 0 ? null : m - 1;
+        const resPrev = resultadoMensal(dre, linhasDre, 'prev');
+        return (
+          <div className="grid g4 mt">
+            <div className="card kpi"><div className="lbl">Receita recebida em {MESES_LONGOS[m].toLowerCase()}</div><div className="val">{brl(rec[m])}</div><div className="sub">até hoje</div></div>
+            <div className="card kpi"><div className="lbl">Resultado de {ant != null ? MESES_LONGOS[ant].toLowerCase() : '·'}</div><div className={'val ' + (ant != null && res[ant] < 0 ? 'neg' : 'pos')}>{ant != null ? brl(res[ant]) : '·'}</div><div className="sub">último mês fechado, realizado</div></div>
+            <div className="card kpi"><div className="lbl">Resultado acumulado {anoH}</div><div className={'val ' + (res.reduce((a, b) => a + b, 0) < 0 ? 'neg' : 'pos')}>{brl(res.reduce((a, b) => a + b, 0))}</div><div className="sub">realizado até hoje</div></div>
+            <div className="card kpi"><div className="lbl">Resultado previsto até dezembro</div><div className="val">{brl(resPrev.reduce((a, b) => a + b, 0))}</div><div className="sub">lançamentos ainda não pagos</div></div>
+          </div>);
+      })()}
 
       {podeEditar(usuario?.perfil) && (
         <div className="grid g21 mt">
@@ -74,7 +91,6 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-      <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 16 }}>Projeção de saldo, contas a receber e resultado entram nas próximas etapas, junto com essas telas.</p>
-    </>
+          </>
   );
 }

@@ -103,3 +103,5 @@ svg text{font-family:Inter;font-size:11px;fill:var(--muted)}
 .ok{background:var(--pos-bg);color:var(--pos);padding:8px 12px;border-radius:8px;font-size:13px}
 .user button{margin-top:8px;background:none;border:1px solid var(--navy-3);color:#C9CEDA;border-radius:6px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer}
 a{color:var(--navy)}
+
+.tag{white-space:nowrap}
