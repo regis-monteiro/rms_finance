@@ -4,6 +4,10 @@ import { brl } from '../lib/format';
 import { carregarDRE, linhaMensal, pct, resultadoMensal, useAnos, useLinhasDRE, SUBTOTAIS, MESES_LONGOS, type PontoDRE } from '../lib/analises';
 import { GraficoBarras, GraficoLinhas, MESES_CURTOS } from '../lib/graficos';
 import { Cabecalho } from '../components/Layout';
+import { ModalEmissao } from '../components/Emissao';
+import { gerarExcel, gerarPDF, type Relatorio } from '../lib/relatorios';
+import { useAuth } from '../lib/auth';
+import type { Signatario } from '../components/Signatarios';
 
 type Tipo = 'mes' | 'ano' | 'acum';
 const soma = (a: number[]) => a.reduce((x, y) => x + y, 0);
@@ -19,6 +23,8 @@ export default function Comparativos() {
   const [tipo, setTipo] = useState<Tipo>('ano');
   const [atual, setAtual] = useState<PontoDRE[]>([]);
   const [anterior, setAnterior] = useState<PontoDRE[]>([]);
+  const [emitir, setEmitir] = useState(false);
+  const { usuario } = useAuth();
 
   useEffect(() => {
     carregarDRE(ano, conta).then(setAtual).catch(() => setAtual([]));
@@ -65,6 +71,33 @@ export default function Comparativos() {
   const despA = recA.map((v, i) => v - resA[i]), despB = recB.map((v, i) => v - resB[i]);
   const semAnterior = anterior.length === 0;
 
+  async function emitirRelatorio(f: 'pdf' | 'xlsx', assinaturas: Signatario[]) {
+    const tipoTxt = tipo === 'mes' ? 'Mês anterior' : tipo === 'ano' ? 'Mesmo mês do ano anterior' : 'Acumulado do ano';
+    const v = (a: number, b: number) => (b ? (a - b) / Math.abs(b) : null);
+    const r: Relatorio = { titulo: 'Comparativos', arquivo: `comparativos_${ano}_${String(mes).padStart(2, '0')}`, paisagem: true, usuario: usuario?.nome || usuario?.email || '', assinaturas,
+      periodo: `${rotA} x ${rotB}`,
+      filtros: [tipoTxt, conta ? 'Conta: ' + contas.find(c => c.id === conta)?.nome : 'Todas as contas', 'valores realizados'].join(' · '),
+      resumo: [{ rotulo: 'Receita de serviços', valor: brl(rec.a) }, { rotulo: 'Custos e despesas', valor: brl(desp.a) }, { rotulo: 'Resultado líquido', valor: brl(res.a) }, { rotulo: `Resultado em ${rotB}`, valor: brl(res.b) }],
+      secoes: [
+        { titulo: `DRE comparativo · ${rotA} x ${rotB}`, colunas: [{ titulo: 'Linha', chave: 'n' }, { titulo: rotA, chave: 'a', tipo: 'moeda' }, { titulo: rotB, chave: 'b', tipo: 'moeda' }, { titulo: 'Variação R$', chave: 'd', tipo: 'moeda' }, { titulo: 'Variação %', chave: 'p', tipo: 'pct' }, { titulo: '% da receita', chave: 'r', tipo: 'pct' }],
+          linhas: tab.map(t => ({ n: t.nome, a: t.a, b: t.b, d: t.a - t.b, p: v(t.a, t.b), r: rec.a ? t.a / rec.a : null, _estilo: t.sub ? 'sub' as const : undefined })) },
+        { titulo: `Evolução mensal · ${ano} x ${ano - 1}`, colunas: [{ titulo: 'Mês', chave: 'm' }, { titulo: `Receita ${ano}`, chave: 'ra', tipo: 'moeda' }, { titulo: `Receita ${ano - 1}`, chave: 'rb', tipo: 'moeda' }, { titulo: 'Variação %', chave: 'vr', tipo: 'pct' }, { titulo: `Resultado ${ano}`, chave: 'sa', tipo: 'moeda' }, { titulo: `Resultado ${ano - 1}`, chave: 'sb', tipo: 'moeda' }, { titulo: 'Variação %', chave: 'vs', tipo: 'pct' }],
+          linhas: [...MESES_LONGOS.map((m, i) => ({ m, ra: i < fechados ? recA[i] : null, rb: recB[i], vr: i < fechados ? v(recA[i], recB[i]) : null, sa: i < fechados ? resA[i] : null, sb: resB[i], vs: i < fechados ? v(resA[i], resB[i]) : null })),
+            { m: `Jan a ${MESES_CURTOS[Math.max(0, fechados - 1)]}`, ra: ytd(recA), rb: ytd(recB), vr: v(ytd(recA), ytd(recB)), sa: ytd(resA), sb: ytd(resB), vs: v(ytd(resA), ytd(resB)), _estilo: 'total' as const }] },
+        { titulo: 'Tendências', colunas: [{ titulo: 'Indicador', chave: 'i' }, { titulo: 'Valor', chave: 'x' }],
+          linhas: [
+            { i: 'Crescimento médio mensal da receita', x: brl(incl) },
+            { i: `Receita acumulada x ${ano - 1}`, x: ytd(recB) ? pct(ytd(recA) / ytd(recB) - 1) : '·' },
+            { i: `Custos e despesas acumulados x ${ano - 1}`, x: ytd(despB) ? pct(ytd(despA) / ytd(despB) - 1) : '·' },
+            { i: 'Margem líquida média', x: ytd(recA) ? (ytd(resA) / ytd(recA) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '·' },
+            ...(fechados < 12 ? [{ i: `Receita projetada para ${MESES_LONGOS[fechados].toLowerCase()}`, x: brl(proj(1)) }] : []),
+            ...(fechados < 11 ? [{ i: `Receita projetada para ${MESES_LONGOS[fechados + 1].toLowerCase()}`, x: brl(proj(2)) }] : []),
+          ] },
+      ],
+      observacao: 'Regime de caixa (realizado pela data de pagamento). Projeção por tendência linear dos meses fechados, sem considerar sazonalidade.' };
+    f === 'pdf' ? await gerarPDF(r) : await gerarExcel(r);
+  }
+
   const kpi = (t: string, x: { a: number; b: number }, inverter = false) => {
     const d = x.a - x.b, p = x.b ? d / Math.abs(x.b) : 0, bom = inverter ? d <= 0 : d >= 0;
     return <div className="card kpi"><div className="lbl">{t}</div><div className="val">{brl(x.a)}</div>
@@ -73,7 +106,8 @@ export default function Comparativos() {
 
   return (
     <>
-      <Cabecalho titulo="Comparativos" sub="Evolução, tendências e variações em R$ e %" />
+      <Cabecalho titulo="Comparativos" sub="Evolução, tendências e variações em R$ e %"><button className="btn" onClick={() => setEmitir(true)}>Emitir PDF / Excel</button></Cabecalho>
+      {emitir && <ModalEmissao titulo={`Comparativos ${rotA} x ${rotB}`} assinatura aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio} />}
       <div className="filters">
         <div className="tabs" style={{ margin: 0, border: 0 }}>{([['mes', 'Mês anterior'], ['ano', 'Mesmo mês do ano anterior'], ['acum', 'Acumulado do ano']] as [Tipo, string][]).map(([k, t]) => <button key={k} className={tipo === k ? 'on' : ''} onClick={() => setTipo(k)}>{t}</button>)}</div>
         <span style={{ flex: 1 }} />

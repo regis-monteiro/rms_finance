@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSignatarios, type Signatario } from './Signatarios';
+import { useSignatarios, identificacao, type Signatario } from './Signatarios';
 
 /** Janela de emissão: escolhe o formato e, quando permitido, os signatários. */
 export function ModalEmissao({ titulo, assinatura, extras, aoFechar, aoGerar }: {
@@ -26,7 +26,7 @@ export function ModalEmissao({ titulo, assinatura, extras, aoFechar, aoGerar }: 
               : sigs.map(s => (
                 <label key={s.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '4px 0' }}>
                   <input type="checkbox" checked={sel.has(s.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(s.id) : n.delete(s.id); setSel(n); }} />
-                  <b>{s.nome}</b> <span style={{ color: 'var(--muted)' }}>{s.cargo}{s.registro ? ' · ' + s.registro : ''}</span>
+                  <b>{s.nome}</b> <span style={{ color: 'var(--muted)' }}>{identificacao(s)}</span>
                 </label>))}
             <p style={{ fontSize: 12, color: 'var(--muted)', margin: '6px 0 0' }}>O PDF sai com o bloco de assinatura dos selecionados, pronto para assinar no gov.br ou com certificado ICP-Brasil.</p>
           </div>

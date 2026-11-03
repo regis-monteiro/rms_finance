@@ -3,7 +3,7 @@
  * marinho #0B162C, dourado #D9A73B, marfim #F5F1E6; logotipo, título, período,
  * data e hora da emissão, usuário que solicitou e, quando pedido, bloco de assinatura.
  */
-import type { Signatario } from '../components/Signatarios';
+import { identificacao, type Signatario } from '../components/Signatarios';
 
 export type TipoColuna = 'texto' | 'moeda' | 'data' | 'numero' | 'pct';
 export interface Coluna { titulo: string; chave: string; tipo?: TipoColuna; largura?: number }
@@ -42,21 +42,84 @@ const carimbo = () => { const d = agora(); return `${d.getFullYear()}${String(d.
 export async function gerarPDF(r: Relatorio) {
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
-  const doc = new jsPDF({ orientation: r.paisagem ? 'landscape' : 'portrait', unit: 'mm', format: 'a4', compress: true });
-  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 12;
   const img = await logo(); const emissao = fmtEmissao(agora());
 
-  const cabecalho = () => {
-    doc.setFillColor(...NAVY); doc.rect(0, 0, W, 24, 'F');
-    doc.addImage(img, 'PNG', M, 3.2, 39, 14, 'logo-rms', 'FAST');
-    doc.setTextColor(...GOLD); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.text('F I N A N C E', M + 0.5, 21.6);
-    doc.setTextColor(...IVORY); doc.setFont('times', 'bold'); doc.setFontSize(15); doc.text(limpa(r.titulo), W - M, 11, { align: 'right' });
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(limpa(/^Posição/.test(r.periodo) ? r.periodo : 'Período: ' + r.periodo), W - M, 17, { align: 'right' });
-    doc.setFillColor(...GOLD); doc.rect(0, 24, W, 0.8, 'F');
-    doc.setTextColor(...MUTED); doc.setFontSize(7.5);
-    doc.text(limpa(`Emitido em ${emissao} por ${r.usuario}${r.filtros ? '  ·  ' + r.filtros : ''}`), M, 29.5, { maxWidth: W - 2 * M });
-  };
-  const rodape = () => {
+  /** Monta o documento numa escala; devolve se o bloco de assinatura precisou de página só para ele */
+  const montar = (k: number) => {
+    const doc = new jsPDF({ orientation: r.paisagem ? 'landscape' : 'portrait', unit: 'mm', format: 'a4', compress: true });
+    const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 12;
+    let assinaturaSozinha = false;
+    const cabecalho = () => {
+      doc.setFillColor(...NAVY); doc.rect(0, 0, W, 24, 'F');
+      doc.addImage(img, 'PNG', M, 3.2, 39, 14, 'logo-rms', 'FAST');
+      doc.setTextColor(...GOLD); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.text('F I N A N C E', M + 0.5, 21.6);
+      doc.setTextColor(...IVORY); doc.setFont('times', 'bold'); doc.setFontSize(15); doc.text(limpa(r.titulo), W - M, 11, { align: 'right' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+      doc.text(limpa(/^Posição/.test(r.periodo) ? r.periodo : 'Período: ' + r.periodo), W - M, 17, { align: 'right' });
+      doc.setFillColor(...GOLD); doc.rect(0, 24, W, 0.8, 'F');
+      doc.setTextColor(...MUTED); doc.setFontSize(7.5);
+      doc.text(limpa(`Emitido em ${emissao} por ${r.usuario}${r.filtros ? '  ·  ' + r.filtros : ''}`), M, 29.5, { maxWidth: W - 2 * M });
+    };
+    cabecalho();
+    let y = 34;
+    if (r.resumo?.length) {
+      const n = r.resumo.length, gap = 3, w = (W - 2 * M - gap * (n - 1)) / n, h = 15 * Math.max(0.85, k);
+      r.resumo.forEach((kp, i) => {
+        const x = M + i * (w + gap);
+        doc.setFillColor(...(i === 0 ? NAVY : IVORY)); doc.roundedRect(x, y, w, h, 1.5, 1.5, 'F');
+        doc.setTextColor(...(i === 0 ? [185, 192, 208] as [number, number, number] : MUTED)); doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.text(limpa(kp.rotulo), x + 3, y + 5);
+        doc.setTextColor(...(i === 0 ? GOLD : NAVY)); doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.text(limpa(kp.valor), x + 3, y + h - 3.5);
+      });
+      y += h + 5;
+    }
+    for (const sc of r.secoes) {
+      if (sc.titulo) {
+        if (y > H - 40) { doc.addPage(); cabecalho(); y = 34; }
+        doc.setTextColor(...NAVY); doc.setFont('times', 'bold'); doc.setFontSize(11.5); doc.text(limpa(sc.titulo), M, y + 3); y += 5;
+      }
+      const fonte = (sc.colunas.length > 9 ? 6.5 : 8) * k;
+      autoTable(doc, {
+        startY: y, margin: { left: M, right: M, top: 34, bottom: 14 },
+        head: [sc.colunas.map(c => c.titulo)],
+        body: sc.linhas.map(l => sc.colunas.map(c => limpa(texto(c, l[c.chave])))),
+        styles: { font: 'helvetica', fontSize: fonte, cellPadding: 1.6 * k, textColor: [28, 34, 51], lineColor: [228, 222, 208], lineWidth: 0.1 },
+        headStyles: { fillColor: NAVY, textColor: IVORY, fontStyle: 'bold', halign: 'left' },
+        alternateRowStyles: { fillColor: [251, 249, 243] },
+        columnStyles: Object.fromEntries(sc.colunas.map((c, i) => [i, { halign: c.tipo && c.tipo !== 'texto' && c.tipo !== 'data' ? 'right' : 'left', cellWidth: c.largura ?? 'auto' }])),
+        didParseCell: d => {
+          const c = sc.colunas[d.column.index];
+          if (d.section === 'head') { if (c.tipo && c.tipo !== 'texto' && c.tipo !== 'data') d.cell.styles.halign = 'right'; return; }
+          const l = sc.linhas[d.row.index];
+          if (l?._estilo === 'total') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [243, 227, 188]; }
+          if (l?._estilo === 'sub') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = IVORY; }
+          if (l?._estilo === 'grupo') { d.cell.styles.textColor = MUTED; if (d.column.index === 0) d.cell.styles.cellPadding = { left: 5, top: 1.6 * k, bottom: 1.6 * k, right: 1.6 * k }; }
+          if ((c?.tipo === 'moeda' || c?.tipo === 'numero') && Number(l?.[c.chave]) < 0) d.cell.styles.textColor = [178, 58, 58];
+        },
+        didDrawPage: () => cabecalho(),
+      });
+      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+    }
+    const obs = r.observacao ? doc.splitTextToSize(limpa(r.observacao), W - 2 * M) as string[] : [];
+    const assin = r.assinaturas || [];
+    const porLinha = r.paisagem ? 3 : 2, wA = (W - 2 * M - 10 * (porLinha - 1)) / porLinha, altA = 20;
+    const altBloco = assin.length ? 18 + Math.ceil(assin.length / porLinha) * altA : 0;
+    const altObs = obs.length ? obs.length * 3.5 + 3 : 0;
+    // observação e assinaturas ficam juntas e, se couberem, na mesma página do fim do relatório
+    if (y + altObs + altBloco > H - 14) { doc.addPage(); cabecalho(); y = 38; assinaturaSozinha = assin.length > 0; }
+    if (obs.length) { doc.setTextColor(...MUTED); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.text(obs, M, y); y += altObs; }
+    if (assin.length) {
+      doc.setTextColor(...NAVY); doc.setFont('times', 'bold'); doc.setFontSize(11); doc.text('Assinaturas', M, y + 3);
+      doc.setTextColor(...MUTED); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+      doc.text('Documento preparado para assinatura eletrônica (gov.br ou certificado digital ICP-Brasil).', M, y + 7); y += 18;
+      assin.forEach((sg, i) => {
+        const x = M + (i % porLinha) * (wA + 10), yy = y + Math.floor(i / porLinha) * altA;
+        doc.setDrawColor(...NAVY); doc.setLineWidth(0.3); doc.line(x, yy, x + wA, yy);
+        doc.setTextColor(...NAVY); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.text(limpa(sg.nome), x, yy + 4.5);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+        doc.text(limpa(identificacao(sg)), x, yy + 8.5, { maxWidth: wA });
+        doc.text('Data: ____/____/________', x, yy + 12.5);
+      });
+    }
     const n = doc.getNumberOfPages();
     for (let i = 1; i <= n; i++) {
       doc.setPage(i);
@@ -65,67 +128,13 @@ export async function gerarPDF(r: Relatorio) {
       doc.text('RMS Organização Contábil · Relatório emitido pelo RMS Finance', M, H - 6);
       doc.text(`Página ${i} de ${n}`, W - M, H - 6, { align: 'right' });
     }
+    return { doc, assinaturaSozinha };
   };
 
-  cabecalho();
-  let y = 34;
-  if (r.resumo?.length) {
-    const n = r.resumo.length, gap = 3, w = (W - 2 * M - gap * (n - 1)) / n;
-    r.resumo.forEach((k, i) => {
-      const x = M + i * (w + gap);
-      doc.setFillColor(...(i === 0 ? NAVY : IVORY)); doc.roundedRect(x, y, w, 15, 1.5, 1.5, 'F');
-      doc.setTextColor(...(i === 0 ? [185, 192, 208] as [number, number, number] : MUTED)); doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.text(limpa(k.rotulo), x + 3, y + 5);
-      doc.setTextColor(...(i === 0 ? GOLD : NAVY)); doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.text(limpa(k.valor), x + 3, y + 11.5);
-    });
-    y += 20;
-  }
-
-  for (const s of r.secoes) {
-    if (s.titulo) {
-      if (y > H - 40) { doc.addPage(); cabecalho(); y = 34; }
-      doc.setTextColor(...NAVY); doc.setFont('times', 'bold'); doc.setFontSize(11.5); doc.text(limpa(s.titulo), M, y + 3); y += 5;
-    }
-    autoTable(doc, {
-      startY: y, margin: { left: M, right: M, top: 34, bottom: 14 },
-      head: [s.colunas.map(c => c.titulo)],
-      body: s.linhas.map(l => s.colunas.map(c => limpa(texto(c, l[c.chave])))),
-      styles: { font: 'helvetica', fontSize: s.colunas.length > 9 ? 6.5 : 8, cellPadding: 1.6, textColor: [28, 34, 51], lineColor: [228, 222, 208], lineWidth: 0.1 },
-      headStyles: { fillColor: NAVY, textColor: IVORY, fontStyle: 'bold', halign: 'left' },
-      alternateRowStyles: { fillColor: [251, 249, 243] },
-      columnStyles: Object.fromEntries(s.colunas.map((c, i) => [i, { halign: c.tipo && c.tipo !== 'texto' && c.tipo !== 'data' ? 'right' : 'left', cellWidth: c.largura ?? 'auto' }])),
-      didParseCell: d => {
-        if (d.section === 'head') { const c = s.colunas[d.column.index]; if (c.tipo && c.tipo !== 'texto' && c.tipo !== 'data') d.cell.styles.halign = 'right'; return; }
-        const l = s.linhas[d.row.index]; const c = s.colunas[d.column.index];
-        if (l?._estilo === 'total') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [243, 227, 188]; }
-        if (l?._estilo === 'sub') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = IVORY; }
-        if (l?._estilo === 'grupo') { d.cell.styles.textColor = MUTED; if (d.column.index === 0) d.cell.styles.cellPadding = { left: 5, top: 1.6, bottom: 1.6, right: 1.6 }; }
-        if ((c?.tipo === 'moeda' || c?.tipo === 'numero') && Number(l?.[c.chave]) < 0) d.cell.styles.textColor = [178, 58, 58];
-      },
-      didDrawPage: () => cabecalho(),
-    });
-    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
-  }
-
-  if (r.observacao) { doc.setTextColor(...MUTED); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); const t = doc.splitTextToSize(limpa(r.observacao), W - 2 * M); if (y + t.length * 4 > H - 16) { doc.addPage(); cabecalho(); y = 38; } doc.text(t, M, y); y += t.length * 3.5 + 4; }
-
-  if (r.assinaturas?.length) {
-    const porLinha = r.paisagem ? 3 : 2, w = (W - 2 * M - 10 * (porLinha - 1)) / porLinha, alt = 34;
-    const linhas = Math.ceil(r.assinaturas.length / porLinha);
-    if (y + 12 + linhas * alt > H - 14) { doc.addPage(); cabecalho(); y = 38; }
-    doc.setTextColor(...NAVY); doc.setFont('times', 'bold'); doc.setFontSize(11.5); doc.text('Assinaturas', M, y + 3);
-    doc.setTextColor(...MUTED); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-    doc.text('Documento preparado para assinatura eletrônica (gov.br ou certificado digital ICP-Brasil).', M, y + 8); y += 22;
-    r.assinaturas.forEach((s, i) => {
-      const x = M + (i % porLinha) * (w + 10), yy = y + Math.floor(i / porLinha) * alt;
-      doc.setDrawColor(...NAVY); doc.setLineWidth(0.3); doc.line(x, yy, x + w, yy);
-      doc.setTextColor(...NAVY); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.text(limpa(s.nome), x, yy + 5);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED);
-      doc.text(limpa(s.cargo + (s.registro ? ' · ' + s.registro : '')), x, yy + 9.5);
-      doc.text('Data: ____/____/________', x, yy + 14);
-    });
-  }
-  rodape();
-  baixar(doc.output('blob'), `${r.arquivo}_${carimbo()}.pdf`);
+  // Se a assinatura cairia sozinha numa página nova, tenta compactar a tabela para mantê-la junto
+  let res = montar(1);
+  for (const k of [0.9, 0.8, 0.72]) { if (!res.assinaturaSozinha) break; const t = montar(k); if (!t.assinaturaSozinha || k === 0.72) res = t.assinaturaSozinha ? res : t; }
+  baixar(res.doc.output('blob'), `${r.arquivo}_${carimbo()}.pdf`);
 }
 
 /* ======================= Excel ======================= */
@@ -193,7 +202,7 @@ export async function gerarExcel(r: Relatorio) {
       const col = (i % 2) * 3 + 1, l0 = lin + Math.floor(i / 2) * 5;
       ws.getCell(l0, col).border = { top: { style: 'thin', color: { argb: hex(NAVY) } } };
       ws.getCell(l0, col).value = s.nome; ws.getCell(l0, col).font = { bold: true, color: { argb: hex(NAVY) } };
-      ws.getCell(l0 + 1, col).value = s.cargo + (s.registro ? ' · ' + s.registro : ''); ws.getCell(l0 + 1, col).font = { size: 9, color: { argb: hex(MUTED) } };
+      ws.getCell(l0 + 1, col).value = identificacao(s); ws.getCell(l0 + 1, col).font = { size: 9, color: { argb: hex(MUTED) } };
       ws.getCell(l0 + 2, col).value = 'Data: ____/____/________'; ws.getCell(l0 + 2, col).font = { size: 9, color: { argb: hex(MUTED) } };
     });
   }

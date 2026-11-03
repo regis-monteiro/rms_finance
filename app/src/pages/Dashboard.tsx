@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [abertos, setAbertos] = useState<Lancamento[]>([]);
   const [faturas, setFaturas] = useState<Fatura[]>([]);
   const [dre, setDre] = useState<PontoDRE[]>([]);
+  const [receb, setReceb] = useState({ previsto: 0, recebido: 0, aberto: 0 });
   const linhasDre = useLinhasDRE();
   const [emitir, setEmitir] = useState(false);
   const hoje = hojeISO(), [anoH, mesH] = hoje.split('-').map(Number), fimMes = `${hoje.slice(0, 8)}${new Date(anoH, mesH, 0).getDate()}`;
@@ -28,6 +29,10 @@ export default function Dashboard() {
   useEffect(() => {
     supabase.from('saldos_contas').select('*').order('ordem').then(({ data }) => setSaldos((data as Saldo[]) || []));
     carregarDRE(anoH, null).then(setDre).catch(() => setDre([]));
+    Promise.all([supabase.rpc('receitas_mensais', { p_ano: anoH }), supabase.from('previsoes_receita').select('valor').eq('ano', anoH).eq('mes', mesH)]).then(([a, b]) => {
+      const r = ((a.data as { mes: number; recebido: number; a_receber: number }[]) || []).filter(x => x.mes === mesH);
+      setReceb({ previsto: ((b.data as { valor: number }[]) || []).reduce((s, x) => s + Number(x.valor), 0), recebido: r.reduce((s, x) => s + Number(x.recebido), 0), aberto: r.reduce((s, x) => s + Number(x.a_receber), 0) });
+    });
     if (podeEditar(usuario?.perfil)) {
       supabase.from('lancamentos').select('*').eq('tipo', 'saida').neq('status', 'pago').lte('vencimento', fimMes).order('vencimento')
         .then(({ data }) => setAbertos((data as Lancamento[]) || []));
@@ -43,6 +48,7 @@ export default function Dashboard() {
   const resto = abertos.filter(l => l.vencimento > somaDias(hoje, 7));
   const nomeConta = (id: number | null) => contas.find(c => c.id === id)?.nome || 'A definir';
   const nomeGrupo = (id: number) => grupos.find(g => g.id === id)?.nome || '';
+  const aReceber = receb.previsto ? Math.max(0, receb.previsto - receb.recebido) : receb.aberto;
 
   async function emitirRelatorio(f: 'pdf' | 'xlsx', assinaturas: Signatario[]) {
     const res = resultadoMensal(dre, linhasDre, 'real'), rec = linhaMensal(dre, linhasDre.find(l => l.ordem === 10)?.id, 'real'), prev = resultadoMensal(dre, linhasDre, 'prev');
@@ -62,7 +68,7 @@ export default function Dashboard() {
         linhas: [...faturas.map(x => ({ c: x.cartao, d: x.data_vencimento, v: x.total - x.pago })), { c: 'Total', v: faturas.reduce((a, x) => a + x.total - x.pago, 0), _estilo: 'total' as const }] as Linha[] });
     }
     const r = { titulo: 'Dashboard financeiro', arquivo: 'dashboard', usuario: usuario?.nome || usuario?.email || '', periodo: `Posição em ${posicao}`, assinaturas,
-      resumo: [{ rotulo: 'Saldo total', valor: brl(total) }, { rotulo: `Resultado de ${m ? MESES_LONGOS[m - 1].toLowerCase() : '·'}`, valor: m ? brl(res[m - 1]) : '·' }, { rotulo: `Acumulado ${anoH}`, valor: brl(acum) }, { rotulo: 'Previsto até dezembro', valor: brl(prev.reduce((a, b) => a + b, 0)) }],
+      resumo: [{ rotulo: 'Saldo total', valor: brl(total) }, { rotulo: `A receber em ${MESES_LONGOS[m].toLowerCase()}`, valor: brl(aReceber) }, { rotulo: `Resultado de ${m ? MESES_LONGOS[m - 1].toLowerCase() : '·'}`, valor: m ? brl(res[m - 1]) : '·' }, { rotulo: `Acumulado ${anoH}`, valor: brl(acum) }, { rotulo: 'Previsto até dezembro', valor: brl(prev.reduce((a, b) => a + b, 0)) }],
       secoes, observacao: 'Resultados em regime de caixa (realizado pela data de pagamento). Saldos conforme lançamentos pagos até a data de emissão.' };
     f === 'pdf' ? await gerarPDF(r) : await gerarExcel(r);
   }
@@ -83,7 +89,9 @@ export default function Dashboard() {
         const m = mesH - 1, ant = m === 0 ? null : m - 1;
         const resPrev = resultadoMensal(dre, linhasDre, 'prev');
         return (
-          <div className="grid g4 mt">
+          <div className="grid g5 mt">
+            <div className="card kpi"><div className="lbl">A receber em {MESES_LONGOS[m].toLowerCase()}</div><div className="val">{brl(aReceber)}</div>
+              <div className="sub">{receb.previsto ? `previsto ${brl(receb.previsto)} · recebido ${brl(receb.recebido)}` : 'entradas lançadas em aberto'}</div></div>
             <div className="card kpi"><div className="lbl">Receita recebida em {MESES_LONGOS[m].toLowerCase()}</div><div className="val">{brl(rec[m])}</div><div className="sub">até hoje</div></div>
             <div className="card kpi"><div className="lbl">Resultado de {ant != null ? MESES_LONGOS[ant].toLowerCase() : '·'}</div><div className={'val ' + (ant != null && res[ant] < 0 ? 'neg' : 'pos')}>{ant != null ? brl(res[ant]) : '·'}</div><div className="sub">último mês fechado, realizado</div></div>
             <div className="card kpi"><div className="lbl">Resultado acumulado {anoH}</div><div className={'val ' + (res.reduce((a, b) => a + b, 0) < 0 ? 'neg' : 'pos')}>{brl(res.reduce((a, b) => a + b, 0))}</div><div className="sub">realizado até hoje</div></div>

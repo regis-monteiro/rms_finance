@@ -105,3 +105,7 @@ svg text{font-family:Inter;font-size:11px;fill:var(--muted)}
 a{color:var(--navy)}
 
 .tag{white-space:nowrap}
+
+.g5{grid-template-columns:repeat(5,1fr)}
+@media(max-width:1200px){.g5{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:760px){.g5{grid-template-columns:1fr}}
