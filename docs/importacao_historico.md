@@ -1,8 +1,10 @@
-# Importação do histórico (2016 a 2025)
+# Importação do histórico (2017 a 2025)
 
 Registro das diferenças encontradas em cada planilha e das decisões tomadas. A tela de Importação usa estas regras.
 
 ## Regras gerais
+
+- **2016 não será importado** (modelo antigo, 111 lançamentos sem banco e saldos que não fecham com 2017). O histórico começa em 01/01/2017.
 
 - Anos encerrados (2016 a 2025): todos os lançamentos entram como **Pago**, independentemente da cor da célula. Data de pagamento = data de vencimento.
 - Nomes de bancos são comparados sem diferença de maiúsculas e minúsculas (ex.: "inter" = "Inter").
@@ -54,6 +56,7 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 |---|---|---|---|---|---|
 | 2025 | 3.387 | 708 | R$ 330.655,34 | R$ 330.644,57 | Bradesco: R$ 10,77 a mais em 31/12/2025 do que em 01/01/2026 |
 | 2024 | 3.484 | 735 | R$ 153.513,63 | R$ 153.513,62 | Bradesco: R$ 0,01 (arredondamento) |
+| 2016 | 2.565 | 321 | R$ 21.668,88 | −R$ 10.838,87 | Não importado |
 | 2017 | 2.935 | 352 | R$ 29.656,11 | R$ 30.786,07 | Poupança abre 2018 com R$ 1.129,96, mas não aparece na planilha de 2017 |
 | 2018 | 3.403 | 272 | R$ 64.093,14 | R$ 64.093,14 | Nenhuma |
 | 2019 | 3.648 | 170 | R$ 95.915,55 | R$ 95.915,55 | Nenhuma |
@@ -70,6 +73,7 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 - 03/11/2026: "CC Inter" é o cartão PJ Inter.
 - 03/11/2026: em 2024, "RMS Bradesco" é a conta Bradesco atual; "Bradesco" é uma conta antiga, inativa.
 - 03/11/2026: "CEF" e "Poupança" viram duas contas antigas, inativas.
+- 03/11/2026: 2016 não será importado. Registrado para referência: "CC Bradesco - Gold" seria outro cartão e "Parcelamentos" iria para Juros Bancários.
 - 03/11/2026: em 2017, a conta "RMS" é a Oportunit.
 - 03/11/2026: em 2018, "Pró-Labore Sócios" é o grupo Pró-labore; a conta "Cheques" tem movimento em 2018 e 2019 (honorários recebidos em cheque) e passa a ser importada como conta inativa.
 - 03/11/2026: em 2019, conta "Oportunit" antiga e inativa e "Factoring" em Empréstimos (seguindo o padrão dos anos anteriores; a confirmar).
