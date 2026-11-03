@@ -1,0 +1,12 @@
+# Planilhas com dados financeiros nunca vão para o repositório
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+
+# Dependências e build
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
