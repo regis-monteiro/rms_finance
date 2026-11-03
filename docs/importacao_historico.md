@@ -33,6 +33,9 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 | Banco "Itaú" | Conta nova "Itaú", corrente, inativa | 2022 |
 | Banco "Outros" | Não importar (sem movimento) | 2022 |
 | Grupo "Elaine" | Grupo Administrativas | 2022 |
+| Banco "Omiecash" | Conta nova "Omiecash", corrente, inativa | 2020 |
+| Grupo "Nota Fiscal Paulista" | Grupo Sócios (fora do resultado) | 2020 |
+| Grupo "Fornecedores" (cartório) | Grupo Operação | 2020 |
 | Banco "Cheques" | Não importar (sem movimento) | 2023 |
 | Subgrupo "CC Bradesco" | Cartão PJ Bradesco | 2023 |
 | Subgrupo "CC RMS Bradesco" | Cartão PJ Bradesco | 2021 |
@@ -45,6 +48,7 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 |---|---|---|---|---|---|
 | 2025 | 3.387 | 708 | R$ 330.655,34 | R$ 330.644,57 | Bradesco: R$ 10,77 a mais em 31/12/2025 do que em 01/01/2026 |
 | 2024 | 3.484 | 735 | R$ 153.513,63 | R$ 153.513,62 | Bradesco: R$ 0,01 (arredondamento) |
+| 2020 | 3.500 | 186 | R$ 143.507,89 | R$ 143.506,34 | RMS Bradesco: R$ 1,55 a mais em 31/12/2020; Bloqueio Judicial (+R$ 45,13) e Bradesco antiga (−R$ 45,13) se compensam |
 | 2021 | 3.393 | 409 | R$ 71.396,93 | R$ 71.396,93 | Nenhuma |
 | 2022 | 3.549 | 428 | R$ 78.661,97 | R$ 78.661,97 | Nenhuma |
 | 2023 | 3.555 | 481 | R$ 68.295,79 | R$ 63.609,40 | R$ 4.686,39 da conta Bloqueio Judicial, que não passa para 2024 |
@@ -57,6 +61,7 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 - 03/11/2026: "CC Inter" é o cartão PJ Inter.
 - 03/11/2026: em 2024, "RMS Bradesco" é a conta Bradesco atual; "Bradesco" é uma conta antiga, inativa.
 - 03/11/2026: "CEF" e "Poupança" viram duas contas antigas, inativas.
+- 03/11/2026: em 2020, "Nota Fiscal Paulista" no bloco Sócios; conta "Omiecash" antiga e inativa; "Fornecedores" (cartório) em Operação.
 - 03/11/2026: em 2021, sem decisões novas ("Pró-Labore" e "Não Previstas" com maiúscula são os grupos de sempre; "CC RMS Bradesco" é o cartão PJ Bradesco).
 - 03/11/2026: em 2022, conta "Itaú" antiga e inativa; grupo "Elaine" (compra no cartão) como despesa Administrativa.
 - 03/11/2026: em 2023, contas "Reginaldo" e "Bloqueio Judicial" não são importadas; "Osasco" vai para Não previstas; "CC Bradesco" é o cartão PJ Bradesco.
