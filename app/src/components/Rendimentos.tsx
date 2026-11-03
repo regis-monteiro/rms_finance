@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import DataBR from './DataBR';
 import { supabase } from '../lib/supabase';
 import { brl, dataBR, hojeISO } from '../lib/format';
 import { useCadastros } from '../lib/useCadastros';
@@ -149,7 +150,7 @@ export default function Rendimentos({ mes }: { mes: string }) {
                         <td className="r">{inp(a.id, 'bruto', ok)}</td><td className="r">{inp(a.id, 'liquido', ok)}</td>
                         <td className={'r ' + ((k?.rend || 0) >= 0 ? 'pos' : 'neg')}>{k ? brl(k.rend) : '·'}</td>
                         <td className="r neg">{k ? brl(k.irrf) : '·'}{k && <div style={{ fontSize: 11, color: 'var(--muted)' }}>acumulado {brl(k.irrfAcum)}</div>}</td>
-                        <td><input type="date" value={ed[a.id]?.data || ''} disabled={ok} onChange={e => set(a.id, 'data', e.target.value)} /></td>
+                        <td><DataBR value={ed[a.id]?.data || ''} disabled={ok} onChange={e => set(a.id, 'data', e.target.value)} /></td>
                         <td className="r" style={{ whiteSpace: 'nowrap' }}>
                           {ok ? <><span className="st pago">Confirmado {dataBR(p!.data_confirmacao)}</span> <button className="btn ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => desfazer(p!)}>Desfazer</button></>
                             : <><button className="btn ghost" style={{ padding: '3px 9px', fontSize: 12 }} disabled={!ed[a.id]?.bruto || !ed[a.id]?.liquido} onClick={() => salvar(a)}>Salvar</button>{' '}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import DataBR from '../components/DataBR';
 import { supabase, type Lancamento, type Status } from '../lib/supabase';
-import { brl, diaMes, hojeISO, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
+import { brl, dataBR, diaMes, hojeISO, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
 import { useCadastros } from '../lib/useCadastros';
 import { Cabecalho } from '../components/Layout';
 import { FormBeneficiario } from '../components/Beneficiarios';
@@ -52,7 +53,7 @@ export default function Lancamentos() {
     e.preventDefault(); setErro('');
     if (!form) return;
     const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null,
-      data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null, atualizado_em: new Date().toISOString() };
+      data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null, juros_multa: Number(form.juros_multa || 0), atualizado_em: new Date().toISOString() };
     if (form.status === 'pago' && !dados.conta_id) { setErro('Para marcar como Pago, informe a conta.'); return; }
     if (exigeBenef && !form.beneficiario_id) { setErro('A partir de 01/01/2027, escolha um beneficiário cadastrado.'); return; }
     if (form.transferencia_id) {
@@ -62,9 +63,34 @@ export default function Lancamentos() {
       if (r1.error || r2.error) { setErro((r1.error || r2.error)!.message); return; }
       setForm(null); setVersao(v => v + 1); return;
     }
-    const { error } = form.id ? await supabase.from('lancamentos').update(dados).eq('id', form.id) : await supabase.from('lancamentos').insert(dados);
-    if (error) { setErro(error.message); return; }
+    const res = form.id ? await supabase.from('lancamentos').update(dados).eq('id', form.id).select().single() : await supabase.from('lancamentos').insert(dados).select().single();
+    if (res.error) { setErro(res.error.message); return; }
+    const erroJuros = await sincronizarJuros(res.data as Lancamento);
+    if (erroJuros) { setErro('Lançamento salvo, mas a multa/juros não foi lançada: ' + erroJuros); setVersao(v => v + 1); return; }
     setForm(null); setVersao(v => v + 1);
+  }
+
+  /** Multa/juros: lançamento separado em Despesas financeiras (pagamento) ou Receitas financeiras (recebimento) */
+  async function sincronizarJuros(l: Lancamento): Promise<string | null> {
+    const juros = Number(l.juros_multa || 0);
+    if (l.status === 'pago' && juros > 0) {
+      const g = grupos.find(x => x.nome === (l.tipo === 'saida' ? 'Despesas financeiras' : 'Receitas financeiras'));
+      if (!g) return 'rode o arquivo 007_multa_juros.sql no Supabase';
+      const sg = subgrupos.find(x => x.grupo_id === g.id && x.nome === 'Multa/juros por atraso');
+      const dados = { tipo: l.tipo, conta_id: l.conta_id, vencimento: l.data_pagamento, data_pagamento: l.data_pagamento, grupo_id: g.id, subgrupo_id: sg?.id ?? null,
+        favorecido: l.favorecido, beneficiario_id: l.beneficiario_id, referencia: 'Multa/juros: ' + (l.referencia || dataBR(l.vencimento)), valor: juros, status: 'pago', observacao: 'multa/juros por atraso' };
+      if (l.juros_lanc_id) { const r = await supabase.from('lancamentos').update(dados).eq('id', l.juros_lanc_id); return r.error?.message ?? null; }
+      const r = await supabase.from('lancamentos').insert(dados).select('id').single();
+      if (r.error) return r.error.message;
+      const u = await supabase.from('lancamentos').update({ juros_lanc_id: r.data.id }).eq('id', l.id);
+      return u.error?.message ?? null;
+    }
+    if (l.juros_lanc_id) {
+      await supabase.from('lancamentos').update({ juros_lanc_id: null }).eq('id', l.id);
+      const r = await supabase.from('lancamentos').delete().eq('id', l.juros_lanc_id);
+      return r.error?.message ?? null;
+    }
+    return null;
   }
 
   async function confirmarBaixa(e: React.FormEvent) {
@@ -84,6 +110,7 @@ export default function Lancamentos() {
     const { error } = form.transferencia_id
       ? await supabase.from('lancamentos').delete().eq('transferencia_id', form.transferencia_id)
       : await supabase.from('lancamentos').delete().eq('id', form.id);
+    if (!error && form.juros_lanc_id) await supabase.from('lancamentos').delete().eq('id', form.juros_lanc_id);
     if (error) { setErro(error.message); return; }
     setForm(null); setVersao(v => v + 1);
   }
@@ -162,7 +189,7 @@ export default function Lancamentos() {
             <form className="form" onSubmit={salvar}>
               <label>Tipo<select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value as 'entrada' | 'saida' })}><option value="saida">Saída</option><option value="entrada">Entrada</option></select></label>
               <label>Conta<select value={form.conta_id ?? ''} onChange={e => setForm({ ...form, conta_id: e.target.value ? Number(e.target.value) : null })}><option value="">A definir</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
-              <label>Vencimento<input type="date" required value={form.vencimento} onChange={e => setForm({ ...form, vencimento: e.target.value })} /></label>
+              <label>Vencimento<DataBR required value={form.vencimento} onChange={e => setForm({ ...form, vencimento: e.target.value })} /></label>
               <label>Valor (R$)<input type="number" step="0.01" min="0.01" required value={form.valor ?? ''} onChange={e => setForm({ ...form, valor: e.target.value as unknown as number })} /></label>
               <label>Grupo<select required value={form.grupo_id ?? ''} onChange={e => setForm({ ...form, grupo_id: Number(e.target.value), subgrupo_id: null })}><option value="" disabled>Selecione</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
               <label>Subgrupo<select value={form.subgrupo_id ?? ''} onChange={e => setForm({ ...form, subgrupo_id: e.target.value ? Number(e.target.value) : null })}><option value="">·</option>{subsDoGrupo.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
@@ -176,10 +203,14 @@ export default function Lancamentos() {
               <label className="full">Favorecido / Pagador<input required value={form.favorecido} onChange={e => setForm({ ...form, favorecido: e.target.value })} /></label>
               <label>Referência<input placeholder="Parcela ou competência" value={form.referencia ?? ''} onChange={e => setForm({ ...form, referencia: e.target.value })} /></label>
               <label>Documento<input value={form.documento ?? ''} onChange={e => setForm({ ...form, documento: e.target.value })} /></label>
-              <label>Status<select value={form.status} onChange={e => setForm({ ...form, status: e.target.value as Status })}>{(['previsto', 'confirmado', 'agendado', 'pago'] as Status[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></label>
-              {form.status === 'pago'
-                ? <label>Data do pagamento<input type="date" required value={form.data_pagamento ?? form.vencimento} onChange={e => setForm({ ...form, data_pagamento: e.target.value })} /></label>
-                : <label>Forma de pagamento<select value={form.forma_pagamento ?? ''} onChange={e => setForm({ ...form, forma_pagamento: e.target.value })}>{FORMAS.map(x => <option key={x}>{x}</option>)}</select></label>}
+              <label>Status<select value={form.status} onChange={e => { const st = e.target.value as Status; setForm({ ...form, status: st, data_pagamento: st === 'pago' ? (form.data_pagamento || hoje) : null }); }}>{(['previsto', 'confirmado', 'agendado', 'pago'] as Status[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></label>
+              <label>Forma de pagamento<select value={form.forma_pagamento ?? ''} onChange={e => setForm({ ...form, forma_pagamento: e.target.value })}>{FORMAS.map(x => <option key={x}>{x}</option>)}</select></label>
+              <label>Data do {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'}<DataBR required={form.status === 'pago'} value={form.data_pagamento ?? ''}
+                onChange={e => setForm({ ...form, data_pagamento: e.target.value || null, status: e.target.value ? 'pago' : form.status === 'pago' ? 'confirmado' : form.status })} /></label>
+              <label>Multa / juros por atraso (R$)<input type="number" step="0.01" min="0" disabled={!!form.transferencia_id || !!form.fatura_id} value={form.juros_multa || ''} placeholder="0,00"
+                onChange={e => setForm({ ...form, juros_multa: e.target.value as unknown as number })} /></label>
+              {Number(form.juros_multa || 0) > 0 && <p className="full" style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
+                {brl(Number(form.juros_multa))} serão lançados em <b>{form.tipo === 'saida' ? 'Despesas financeiras' : 'Receitas financeiras'} · Multa/juros por atraso</b>, na data do {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'}{form.status !== 'pago' ? ', quando o status for Pago' : ''}. Total {form.tipo === 'entrada' ? 'recebido' : 'pago'}: {brl(Number(form.valor || 0) + Number(form.juros_multa))}.</p>}
               <label className="full">Observação<input value={form.observacao ?? ''} onChange={e => setForm({ ...form, observacao: e.target.value })} /></label>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full">
@@ -201,7 +232,7 @@ export default function Lancamentos() {
         <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setBaixa(null)}>
           <div className="modal"><h2>Baixar {sel.size} lançamento(s)</h2>
             <form className="form" onSubmit={confirmarBaixa}>
-              <label>Data do pagamento<input type="date" required value={baixa.data} onChange={e => setBaixa({ ...baixa, data: e.target.value })} /></label>
+              <label>Data do pagamento<DataBR required value={baixa.data} onChange={e => setBaixa({ ...baixa, data: e.target.value })} /></label>
               <label>Conta (para itens sem conta)<select value={baixa.conta} onChange={e => setBaixa({ ...baixa, conta: e.target.value })}><option value="">Manter a do lançamento</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full"><button type="button" className="btn ghost" onClick={() => setBaixa(null)}>Cancelar</button><button className="btn">Confirmar baixa</button></div>

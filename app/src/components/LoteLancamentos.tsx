@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import DataBR from './DataBR';
 import { supabase, type Lancamento, type Status, type Conta, type Grupo, type Subgrupo, type Beneficiario } from '../lib/supabase';
 import { brl, dataBR, STATUS_LABEL } from '../lib/format';
 import { formatarDocumento } from '../lib/documento';
@@ -52,7 +53,7 @@ export function ModalTransferencia({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad
       <form className="form" onSubmit={salvar}>
         <label>Conta de origem<select required value={f.origem} onChange={e => setF({ ...f, origem: e.target.value })}><option value="" disabled>Selecione</option>{ativas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
         <label>Conta de destino<select required value={f.destino} onChange={e => setF({ ...f, destino: e.target.value })}><option value="" disabled>Selecione</option>{ativas.filter(c => String(c.id) !== f.origem).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
-        <label>Data<input type="date" required value={f.data} onChange={e => setF({ ...f, data: e.target.value })} /></label>
+        <label>Data<DataBR required value={f.data} onChange={e => setF({ ...f, data: e.target.value })} /></label>
         <label>Valor (R$)<input type="number" step="0.01" min="0.01" required value={f.valor} onChange={e => setF({ ...f, valor: e.target.value })} /></label>
         <label>Status<select value={f.status} onChange={e => setF({ ...f, status: e.target.value as Status })}>{(['pago', 'agendado', 'previsto'] as Status[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></label>
         <label>Observação<input value={f.obs} onChange={e => setF({ ...f, obs: e.target.value })} placeholder="Ex.: aplicação, resgate" /></label>
@@ -183,12 +184,12 @@ export function ModalAlterarLote({ itens, cad, hoje, aoFechar, aoSalvar }: { ite
       <form className="form" onSubmit={salvar}>
         {marca('status', 'Status')}
         {usar.status && <><label>Novo status<select value={v.status} onChange={e => setV({ ...v, status: e.target.value as Status })}>{(['previsto', 'confirmado', 'agendado', 'pago'] as Status[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></label>
-          {v.status === 'pago' ? <label>Data do pagamento<input type="date" required value={v.dataPag} onChange={e => setV({ ...v, dataPag: e.target.value })} /></label> : <span />}</>}
+          {v.status === 'pago' ? <label>Data do pagamento<DataBR required value={v.dataPag} onChange={e => setV({ ...v, dataPag: e.target.value })} /></label> : <span />}</>}
         {marca('conta', 'Conta')}
         {usar.conta && <label className="full">Nova conta<select value={v.conta} onChange={e => setV({ ...v, conta: e.target.value })}><option value="">A definir</option>{cad.contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>}
         {marca('venc', 'Vencimento')}
         {usar.venc && <><label>Como alterar<select value={v.vencModo} onChange={e => setV({ ...v, vencModo: e.target.value })}><option value="data">Nova data para todos</option><option value="dias">Adiar/antecipar em dias</option><option value="meses">Adiar/antecipar em meses</option></select></label>
-          {v.vencModo === 'data' ? <label>Nova data<input type="date" required value={v.vencData} onChange={e => setV({ ...v, vencData: e.target.value })} /></label>
+          {v.vencModo === 'data' ? <label>Nova data<DataBR required value={v.vencData} onChange={e => setV({ ...v, vencData: e.target.value })} /></label>
             : <label>{v.vencModo === 'dias' ? 'Dias' : 'Meses'} (negativo antecipa)<input type="number" required value={v.vencN} onChange={e => setV({ ...v, vencN: e.target.value })} /></label>}</>}
         {marca('grupo', 'Grupo e subgrupo')}
         {usar.grupo && <><label>Grupo<select required value={v.grupo} onChange={e => setV({ ...v, grupo: e.target.value, sub: '' })}><option value="" disabled>Selecione</option>{cad.grupos.filter(x => !ESPECIAIS.includes(x.nome)).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>

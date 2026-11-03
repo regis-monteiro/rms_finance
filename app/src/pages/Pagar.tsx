@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import DataBR from '../components/DataBR';
 import { Link } from 'react-router-dom';
 import { supabase, type Lancamento } from '../lib/supabase';
 import { brl, dataBR, diaMes, hojeISO, somaDias, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
@@ -61,8 +62,10 @@ export default function Pagar() {
       if (r.error) { setErro(r.error.message); return; }
     }
     if (juros > 0) {
-      const g = grupos.find(x => x.nome === 'Juros Bancários');
-      await supabase.from('lancamentos').insert({ tipo: 'saida', conta_id, vencimento: baixa.data, data_pagamento: baixa.data, grupo_id: g!.id, favorecido: l.favorecido, beneficiario_id: l.beneficiario_id, referencia: 'Juros/multa: ' + (l.referencia || dataBR(l.vencimento)), valor: juros, status: 'pago' });
+      const g = grupos.find(x => x.nome === 'Despesas financeiras') || grupos.find(x => x.nome === 'Juros Bancários');
+      const sg = subgrupos.find(x => x.grupo_id === g!.id && x.nome === 'Multa/juros por atraso');
+      const r = await supabase.from('lancamentos').insert({ tipo: 'saida', conta_id, vencimento: baixa.data, data_pagamento: baixa.data, grupo_id: g!.id, subgrupo_id: sg?.id ?? null, favorecido: l.favorecido, beneficiario_id: l.beneficiario_id, referencia: 'Multa/juros: ' + (l.referencia || dataBR(l.vencimento)), valor: juros, status: 'pago', observacao: 'multa/juros por atraso' }).select('id').single();
+      if (!r.error && !parcial && !l.fatura_id) await supabase.from('lancamentos').update({ juros_multa: juros, juros_lanc_id: r.data.id }).eq('id', l.id);
     }
     setBaixa(null); setVersao(v => v + 1);
   }
@@ -116,11 +119,11 @@ export default function Pagar() {
                 {(b.banco || b.agencia || b.conta) && <div style={{ marginTop: 4, color: 'var(--muted)' }}>Banco {b.banco || '·'} · Ag. {b.agencia || '·'} · Conta {b.conta || '·'}</div>}
               </div>); })()}
             <form className="form" onSubmit={confirmar}>
-              <label>Data do pagamento<input type="date" required value={baixa.data} onChange={e => setBaixa({ ...baixa, data: e.target.value })} /></label>
+              <label>Data do pagamento<DataBR required value={baixa.data} onChange={e => setBaixa({ ...baixa, data: e.target.value })} /></label>
               <label>Conta<select required value={baixa.conta} onChange={e => setBaixa({ ...baixa, conta: e.target.value })}><option value="" disabled>Selecione</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
               <label>Valor pago (R$)<input type="number" step="0.01" min="0.01" required value={baixa.valor} onChange={e => setBaixa({ ...baixa, valor: e.target.value })} /></label>
               <label>Juros / multa (R$)<input type="number" step="0.01" min="0" value={baixa.juros} onChange={e => setBaixa({ ...baixa, juros: e.target.value })} /></label>
-              <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Valor menor que o total registra pagamento parcial; a diferença continua em aberto. Juros e multa entram como lançamento separado em Juros Bancários.</p>
+              <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Valor menor que o total registra pagamento parcial; a diferença continua em aberto. Multa e juros entram como lançamento separado em Despesas financeiras · Multa/juros por atraso.</p>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full"><button type="button" className="btn ghost" onClick={() => setBaixa(null)}>Cancelar</button><button className="btn">Confirmar baixa</button></div>
             </form>

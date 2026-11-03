@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import DataBR from '../components/DataBR';
 import { supabase } from '../lib/supabase';
 import { useCadastros } from '../lib/useCadastros';
 import { Cabecalho } from '../components/Layout';
@@ -42,7 +43,7 @@ export default function Cadastros() {
             <tbody>{contas.map(c => (
               <tr key={c.id}><td>{c.nome}</td><td>{TIPO[c.tipo]}</td>
                 <td className="r"><input type="number" step="0.01" defaultValue={c.saldo_inicial} style={{ width: 140, textAlign: 'right' }} onBlur={e => Number(e.target.value) !== Number(c.saldo_inicial) && gravar('contas', c.id, 'saldo_inicial', Number(e.target.value))} /></td>
-                <td><input type="date" defaultValue={c.data_saldo_inicial} onBlur={e => e.target.value !== c.data_saldo_inicial && gravar('contas', c.id, 'data_saldo_inicial', e.target.value)} /></td>
+                <td><DataBR defaultValue={c.data_saldo_inicial} onBlur={e => e.target.value !== c.data_saldo_inicial && gravar('contas', c.id, 'data_saldo_inicial', e.target.value)} /></td>
                 <td><input type="checkbox" checked={c.ativa} onChange={e => gravar('contas', c.id, 'ativa', e.target.checked)} /></td></tr>
             ))}</tbody></table>
         )}
