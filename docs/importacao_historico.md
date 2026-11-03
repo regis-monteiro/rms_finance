@@ -41,6 +41,7 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 | Banco "Oportunit" | Conta nova "Oportunit", corrente, inativa | 2019 |
 | Grupo "Factoring" | Grupo Empréstimos (fora do resultado) | 2019 |
 | Grupo "Pró-Labore Sócios" | Grupo Pró-labore | 2018 |
+| Banco "RMS" | Conta Oportunit | 2017 |
 | Banco "Cheques" | Conta nova "Cheques", espécie, inativa (cheques recebidos de clientes) | 2018 e 2019 |
 | Subgrupo "CC Bradesco" | Cartão PJ Bradesco | 2023 |
 | Subgrupo "CC RMS Bradesco" | Cartão PJ Bradesco | 2021 |
@@ -53,6 +54,7 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 |---|---|---|---|---|---|
 | 2025 | 3.387 | 708 | R$ 330.655,34 | R$ 330.644,57 | Bradesco: R$ 10,77 a mais em 31/12/2025 do que em 01/01/2026 |
 | 2024 | 3.484 | 735 | R$ 153.513,63 | R$ 153.513,62 | Bradesco: R$ 0,01 (arredondamento) |
+| 2017 | 2.935 | 352 | R$ 29.656,11 | R$ 30.786,07 | Poupança abre 2018 com R$ 1.129,96, mas não aparece na planilha de 2017 |
 | 2018 | 3.403 | 272 | R$ 64.093,14 | R$ 64.093,14 | Nenhuma |
 | 2019 | 3.648 | 170 | R$ 95.915,55 | R$ 95.915,55 | Nenhuma |
 | 2020 | 3.500 | 186 | R$ 143.507,89 | R$ 143.506,34 | RMS Bradesco: R$ 1,55 a mais em 31/12/2020; Bloqueio Judicial (+R$ 45,13) e Bradesco antiga (−R$ 45,13) se compensam |
@@ -68,6 +70,7 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 - 03/11/2026: "CC Inter" é o cartão PJ Inter.
 - 03/11/2026: em 2024, "RMS Bradesco" é a conta Bradesco atual; "Bradesco" é uma conta antiga, inativa.
 - 03/11/2026: "CEF" e "Poupança" viram duas contas antigas, inativas.
+- 03/11/2026: em 2017, a conta "RMS" é a Oportunit.
 - 03/11/2026: em 2018, "Pró-Labore Sócios" é o grupo Pró-labore; a conta "Cheques" tem movimento em 2018 e 2019 (honorários recebidos em cheque) e passa a ser importada como conta inativa.
 - 03/11/2026: em 2019, conta "Oportunit" antiga e inativa e "Factoring" em Empréstimos (seguindo o padrão dos anos anteriores; a confirmar).
 - 03/11/2026: em 2020, "Nota Fiscal Paulista" no bloco Sócios; conta "Omiecash" antiga e inativa; "Fornecedores" (cartório) em Operação.
