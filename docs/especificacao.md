@@ -50,10 +50,21 @@ Cada conta tem saldo inicial do ano. O saldo do dia é saldo inicial + lançamen
 
 Cartões: Itaucard, Porto, PJ Inter, Efí.
 
-- Cada cartão tem dia de fechamento, dia de vencimento e conta bancária padrão de pagamento.
+- Cada cartão tem dia de vencimento e dia de fechamento (editável no cadastro).
+
+| Cartão | Vencimento |
+|---|---|
+| Itaucard | Dia 11 |
+| PJ Inter | Dia 10 |
+| Efí (Gerencianet) | Dia 13 |
+| Porto | Dia 20 |
+
+- Não há débito automático nem conta padrão: cada fatura pode ser paga por uma ou mais contas, inclusive em pagamentos parciais.
+- A fatura mostra total, valor pago, saldo em aberto e a lista de pagamentos (data, conta, valor). Status da fatura: Aberta, Fechada, Paga parcialmente, Paga.
+- Saldo não pago de uma fatura aparece como pendência no dashboard e em contas a pagar até ser quitado.
 - A compra é lançada na data em que ocorreu, com grupo, subgrupo, favorecido e parcelas.
 - O app agrupa automaticamente a compra na fatura correta, pelo fechamento. Compras parceladas geram uma parcela em cada fatura.
-- A fatura gera um único lançamento de saída na conta bancária (status Previsto, Confirmado, Agendado, Pago).
+- Cada pagamento da fatura gera um lançamento de saída na conta bancária usada (status Previsto, Confirmado, Agendado, Pago).
 - No DRE e nos relatórios por grupo, contam as compras (pela despesa real); no saldo bancário, conta o pagamento da fatura. Isso evita contar a mesma despesa duas vezes.
 
 ### 1.5 Contas a receber (sintético)
@@ -134,9 +145,13 @@ Grupos "Estimativa" e "Saldo Anterior" deixam de existir: estimativas viram lan�
 - Linhas com subgrupo "CC ..." viram compras do cartão correspondente, ligadas à fatura do mês.
 - A planilha original não é guardada no repositório.
 
-## 6. Pontos em aberto
+## 6. Decisões registradas
 
-- Validar a classificação do DRE (item 2).
-- Faturas de cartão aparecem pagas pela conta "Caixa" (espécie). Confirmar a conta correta de pagamento de cada cartão.
-- Dia de fechamento e vencimento de cada cartão.
-- Validar a matriz de permissões (item 4).
+- 03/11/2026: classificação do DRE (item 2) aprovada.
+- 03/11/2026: faturas sem débito automático, pagas por contas variadas e com pagamento parcial permitido.
+- 03/11/2026: matriz de permissões (item 4) mantida para avaliação no uso prático.
+
+## 7. Pontos em aberto
+
+- Dia de fechamento de cada cartão (o vencimento já foi informado).
+- Na importação, faturas lançadas com a conta "Caixa" serão revisadas manualmente.
