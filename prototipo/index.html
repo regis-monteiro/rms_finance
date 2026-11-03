@@ -108,16 +108,16 @@ svg text{font-family:Inter;font-size:11px;fill:var(--muted)}
     <nav id="nav">
       <a href="#dashboard" data-v="dashboard">Dashboard</a>
       <a href="#lancamentos" data-v="lancamentos">Lançamentos</a>
-      <a href="#pagar" data-v="pagar">Contas a pagar<span class="soon">próx.</span></a>
-      <a href="#receber" data-v="receber">Contas a receber<span class="soon">próx.</span></a>
+      <a href="#pagar" data-v="pagar">Contas a pagar</a>
+      <a href="#receber" data-v="receber">Contas a receber</a>
       <a href="#cartoes" data-v="cartoes">Cartões</a>
       <div class="sep">Análises</div>
-      <a href="#dre" data-v="dre">DRE / Análise do fluxo<span class="soon">próx.</span></a>
+      <a href="#dre" data-v="dre">DRE / Análise do fluxo</a>
       <a href="#comparativos" data-v="comparativos">Comparativos</a>
       <div class="sep">Configurações</div>
-      <a href="#cadastros" data-v="cadastros">Cadastros<span class="soon">próx.</span></a>
-      <a href="#usuarios" data-v="usuarios">Usuários<span class="soon">próx.</span></a>
-      <a href="#importacao" data-v="importacao">Importação<span class="soon">próx.</span></a>
+      <a href="#cadastros" data-v="cadastros">Cadastros</a>
+      <a href="#usuarios" data-v="usuarios">Usuários</a>
+      <a href="#importacao" data-v="importacao">Importação</a>
     </nav>
     <div class="user"><b>Reginaldo M. Santos</b>Perfil: Diretor</div>
   </aside>
@@ -237,7 +237,7 @@ function lineChart(series,{w=760,h=240,labels=MESES}={}){
   return `<svg viewBox="0 0 ${w} ${h}" width="100%">${g}</svg><div class="legend">${series.map(s=>`<span><i style="background:${s.c}"></i>${s.n}</span>`).join('')}</div>`;
 }
 function barsChart(items,{w=760,h=220}={}){ // items: [label, a, b]
-  const pad={l:52,r:10,t:10,b:26};const max=Math.ceil(Math.max(...items.flatMap(i=>[i[1],i[2]]))/10000)*10000;
+  const pad={l:52,r:10,t:10,b:26};const st=Math.ceil(Math.max(...items.flatMap(i=>[i[1]||0,i[2]||0]))/4/5000)*5000;const max=st*4;
   const bw=(w-pad.l-pad.r)/items.length, y=v=>pad.t+(h-pad.t-pad.b)*(1-v/max);let g='';
   for(let k=0;k<=4;k++){const v=max*k/4;g+=`<line x1="${pad.l}" x2="${w-pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="#EEE9DC"/><text x="${pad.l-8}" y="${y(v)+4}" text-anchor="end">${fmtN(v/1000)}k</text>`;}
   items.forEach((it,i)=>{const x0=pad.l+i*bw+bw*.18,b=bw*.3;
@@ -428,11 +428,192 @@ function vComparativos(){
     </div>
   </div>`;
 }
+/* ---------- Contas a pagar ---------- */
+let pf={per:'mes',ct:'',g:'',st:''};
+function vPagar(){
+  const fat=cartoes.map(c=>({id:'f'+c.id,v:String(c.venc).padStart(2,'0')+'/11/2026',tp:'S',ct:'A definir',g:'Cartão',sg:c.n,f:'Fatura '+c.n+' (saldo em aberto)',ref:'11/2026',val:totFat(c.id)-pagoFat(c.id),st:faturas[c.id].st==='Aberta'?'prev':'conf',card:c.id})).filter(x=>x.val>0.005);
+  let ab=lanc.filter(l=>l.tp==='S'&&l.st!=='pago'&&l.g!=='Cartão').concat(fat).sort((a,b)=>toDate(a.v)-toDate(b.v));
+  const lim=pf.per==='7'?7:pf.per==='mes'?27:400;
+  ab=ab.filter(l=>(toDate(l.v)-HOJE)/864e5<=lim&&(!pf.ct||l.ct===pf.ct)&&(!pf.g||l.g===pf.g)&&(!pf.st||stOf(l)===pf.st));
+  const sum=a=>a.reduce((s,l)=>s+l.val,0);
+  const venc=ab.filter(l=>toDate(l.v)<HOJE),hoje=ab.filter(l=>toDate(l.v).getTime()===HOJE.getTime()),d7=ab.filter(l=>{const d=(toDate(l.v)-HOJE)/864e5;return d>0&&d<=7;});
+  const dias={};ab.forEach(l=>(dias[l.v]=dias[l.v]||[]).push(l));
+  const grupos=[...new Set(lanc.filter(l=>l.tp==='S').map(l=>l.g))].sort();
+  const opt=(arr,v)=>arr.map(([k,t])=>`<option value="${k}" ${v===k?'selected':''}>${t}</option>`).join('');
+  return header('Contas a pagar','Saídas em aberto, uma a uma, incluindo saldos de faturas de cartão')+`
+  <div class="grid g4">
+    <div class="card kpi"><div class="lbl">Vencidas</div><div class="val neg">${fmt(sum(venc))}</div><div class="sub">${venc.length} itens</div></div>
+    <div class="card kpi"><div class="lbl">Vencem hoje</div><div class="val">${fmt(sum(hoje))}</div><div class="sub">${hoje.length} itens</div></div>
+    <div class="card kpi"><div class="lbl">Próximos 7 dias</div><div class="val">${fmt(sum(d7))}</div><div class="sub">${d7.length} itens</div></div>
+    <div class="card kpi total"><div class="lbl">Total em aberto no filtro</div><div class="val">${fmt(sum(ab))}</div><div class="sub">${ab.length} itens</div></div>
+  </div>
+  <div class="card mt">
+    <div class="filters">
+      <select onchange="pf.per=this.value;render()">${opt([['7','Até 7 dias'],['mes','Até o fim do mês'],['tudo','Tudo em aberto']],pf.per)}</select>
+      <select onchange="pf.ct=this.value;render()">${opt([['','Todas as contas'],...contas.map(c=>[c.n,c.n]),['A definir','Conta a definir']],pf.ct)}</select>
+      <select onchange="pf.g=this.value;render()">${opt([['','Todos os grupos'],...grupos.map(g=>[g,g])],pf.g)}</select>
+      <select onchange="pf.st=this.value;render()">${opt([['','Todos os status'],['venc','Vencido'],['prev','Previsto'],['conf','Confirmado'],['agen','Agendado']],pf.st)}</select>
+      <span style="flex:1"></span><button class="btn gold" onclick="novoLanc()">+ Nova conta a pagar</button>
+    </div>
+    <table><thead><tr><th>Vencimento</th><th>Favorecido</th><th>Grupo</th><th>Subgrupo</th><th>Conta</th><th>Ref.</th><th class="r">Valor</th><th>Status</th><th class="r">Ações</th></tr></thead><tbody>
+    ${Object.entries(dias).map(([d,ls])=>`<tr><td colspan="9" style="background:#FBF9F3;font-weight:600;font-size:12.5px;color:var(--navy)">${d} · ${['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][toDate(d).getDay()]} <span style="float:right">${fmt(sum(ls))}</span></td></tr>`+
+      ls.map(l=>`<tr><td>${dt(l.v)}</td><td>${l.f}</td><td>${l.g}</td><td>${l.sg||'·'}</td><td>${l.ct==='A definir'?'<span class="tag">A definir</span>':l.ct}</td><td>${l.ref||'·'}</td><td class="r">${fmt(l.val)}</td><td>${chip(stOf(l))}</td>
+      <td class="r">${l.card?`<button class="btn ghost" style="padding:4px 10px" onclick="location.hash='cartoes';setTimeout(()=>selCard('${l.card}'),0)">Ver fatura</button>`:`<button class="btn ghost" style="padding:4px 10px" onclick="pagarUm(${l.id})">Baixar</button>`}</td></tr>`).join('')).join('')||'<tr><td colspan="9" class="c" style="padding:24px;color:var(--muted)">Nada em aberto neste filtro</td></tr>'}
+    </tbody></table>
+  </div>`;
+}
+function pagarUm(id){const l=lanc.find(x=>x.id===id);
+  openModal(`<h2>Baixar pagamento</h2><p style="margin:-6px 0 14px;color:var(--muted)">${l.f} · ${fmt(l.val)}</p><form class="form" onsubmit="event.preventDefault();lanc.find(x=>x.id===${id}).st='pago';closeModal();toast('Pagamento baixado');render()">
+  <label>Data do pagamento<input type="date" value="2026-11-03"></label><label>Conta<select>${contas.map(c=>`<option ${c.n===l.ct?'selected':''}>${c.n}</option>`).join('')}</select></label>
+  <label>Valor pago (R$)<input type="number" step="0.01" value="${l.val.toFixed(2)}"></label><label>Juros / multa (R$)<input type="number" step="0.01" value="0.00"></label>
+  <label class="full">Comprovante<input type="file"></label>
+  <div class="actions full"><button type="button" class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn">Confirmar baixa</button></div></form>`);}
+
+/* ---------- Contas a receber ---------- */
+let recMes=10;
+const recGrupos=['Honorários','IRPF','Certificação','Comissões','Rendimentos'];
+const recPrev={Honorários:[60000,60000,61000,61000,62000,62000,62000,62000,62000,62000,62000,75000],IRPF:[0,500,2500,6000,12000,10000,500,500,500,500,1500,500],Certificação:[3800,3800,4000,4000,4000,4000,4000,4000,4200,4200,4200,4200],Comissões:[0,0,0,1200,0,0,0,0,0,0,0,0],Rendimentos:[1300,1300,1350,1350,1400,1400,1400,1400,1450,1450,1800,1800]};
+const recReal={Honorários:[62300,66100,66900,64800,58700,63900,64700,65100,67500,68950,48300,null],IRPF:[0,150,3800,8400,13410,11625,600,750,925,350,900,null],Certificação:[4210,4020,3990,4250,4180,4360,3950,4030,4120,4120,3350,null],Comissões:[0,0,0,1272,0,0,0,0,0,0,0,null],Rendimentos:[1290,1310,1340,1380,1390,1420,1410,1440,1450,1480,1420,null]};
+function vReceber(){
+  const m=recMes,rows=recGrupos.map(g=>[g,recPrev[g][m],recReal[g][m]??0]);
+  const tp=rows.reduce((a,r)=>a+r[1],0),tr=rows.reduce((a,r)=>a+r[2],0);
+  const mm=MESES.map((x,i)=>[x,recGrupos.reduce((a,g)=>a+recPrev[g][i],0),recGrupos.reduce((a,g)=>a+(recReal[g][i]??0),0)||null]);
+  return header('Contas a receber','Controle sintético por grupo de receita: previsto x recebido')+`
+  <div class="filters"><select onchange="recMes=+this.value;render()">${MESES.map((x,i)=>`<option value="${i}" ${i===m?'selected':''}>${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][i]}/2026</option>`).join('')}</select>
+  <span style="flex:1"></span><button class="btn ghost" onclick="toast('No app: gera a previsão do ano a partir do ano anterior, com reajuste em %')">Gerar previsão do ano</button></div>
+  <div class="grid g4">
+    <div class="card kpi"><div class="lbl">Previsto no mês</div><div class="val">${fmt(tp)}</div></div>
+    <div class="card kpi"><div class="lbl">Recebido</div><div class="val pos">${fmt(tr)}</div></div>
+    <div class="card kpi"><div class="lbl">A receber</div><div class="val ${tp-tr>0?'':'pos'}">${fmt(Math.max(0,tp-tr))}</div></div>
+    <div class="card kpi total"><div class="lbl">Realizado</div><div class="val">${tp?(tr/tp*100).toLocaleString('pt-BR',{maximumFractionDigits:1}):0}%</div><div class="sub">do previsto</div></div>
+  </div>
+  <div class="grid g21 mt">
+    <div class="card"><h3>Por grupo de receita <small>a previsão é editável</small></h3>
+      <table><thead><tr><th>Grupo</th><th class="r">Previsto</th><th class="r">Recebido</th><th class="r">Diferença R$</th><th class="r">Realizado</th><th style="width:28%"></th></tr></thead><tbody>
+      ${rows.map(r=>{const d=r[2]-r[1];const p=r[1]?r[2]/r[1]:0;return `<tr><td>${r[0]}</td><td class="r"><input type="number" value="${r[1]}" style="width:110px;text-align:right" onchange="recPrev['${r[0]}'][${m}]=+this.value;render()"></td><td class="r">${fmt(r[2])}</td><td class="r ${d>=0?'pos':'neg'}">${d>=0?'+':'−'}${fmt(Math.abs(d))}</td><td class="r">${r[1]?(p*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%':'·'}</td><td><div class="bar"><i style="width:${Math.min(100,p*100)}%"></i></div></td></tr>`;}).join('')}
+      <tr style="font-weight:700;background:#FBF9F3"><td>Total</td><td class="r">${fmt(tp)}</td><td class="r">${fmt(tr)}</td><td class="r ${tr-tp>=0?'pos':'neg'}">${tr-tp>=0?'+':'−'}${fmt(Math.abs(tr-tp))}</td><td class="r">${tp?(tr/tp*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%':'·'}</td><td></td></tr>
+      </tbody></table>
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 0">O recebido vem automaticamente dos lançamentos de entrada com status Pago.</p>
+    </div>
+    <div class="card"><h3>Ano 2026 <small>previsto (cinza) x recebido (marinho)</small></h3>${barsChart(mm,{w:420,h:240})}</div>
+  </div>`;
+}
+
+/* ---------- DRE / Análise do fluxo ---------- */
+let dreCt='',dreModo='real',dreOpen=new Set();
+const dreEstrut=[
+  ['Receita de serviços',[['Honorários',62000],['IRPF',4000],['Certificação',4100],['Comissões',100]]],
+  ['Custos diretos',[['Certificação (custo)',-1400],['Operação',-1900],['Clientes',-700],['VGP',-60]]],
+  ['=Margem de contribuição'],
+  ['Despesas com pessoal',[['Funcionários',-34800],['Treinamentos',-260],['Endomarketing',-180]]],
+  ['Despesas administrativas',[['Administrativas',-2100],['Imóveis',-6800],['Informática',-1500],['Alimentação',-900],['Locomoção',-110],['Manutenções',-400],['Materiais',-450],['Marketing',-500]]],
+  ['Despesas não previstas',[['Não previstas',-900]]],
+  ['Impostos e taxas',[['Impostos',-3300]]],
+  ['=Resultado operacional'],
+  ['Resultado financeiro',[['Rendimentos',1400],['Juros Bancários',-60],['Tarifas Bancárias',-180],['Tarifas Diversas',-30]]],
+  ['Remuneração dos sócios',[['Pró-labore',-11000]]],
+  ['=Resultado líquido'],
+];
+const dreAbaixo=[['Investimentos em ativos',-1700],['Distribuição de lucros e sócios',-10500],['Empréstimos',-1200],['Transferências entre contas',0]];
+const vari=(base,i,k)=>{const s=Math.sin((i+1)*(k+3)*1.7);return Math.round(base*(1+0.12*s));};
+function vDRE(){
+  const nm=dreModo==='prev'?12:10, fc=dreCt?({'Inter':0.55,'Efí (Gerencianet)':0.35,'Bradesco':0.08,'Caixa':0.02}[dreCt]||0.1):1;
+  const val=(b,i,k)=>{if(dreModo==='real'&&i>9)return null;return Math.round(vari(b,i,k)*fc);};
+  let acc=Array(12).fill(0),rows='',k=0;
+  const cells=a=>a.map(v=>`<td class="r ${v<0?'neg':''}">${v==null?'·':fmtN(v)}</td>`).join('')+`<td class="r" style="font-weight:700">${fmtN(a.reduce((x,y)=>x+(y||0),0))}</td>`;
+  dreEstrut.forEach((l,li)=>{
+    if(l[0][0]==='='){rows+=`<tr style="font-weight:700;background:#F7F3E8"><td>${l[0].slice(1)}</td>${cells(acc.map((v,i)=>dreModo==='real'&&i>9?null:v))}</tr>`;return;}
+    const subs=l[1].map(([g,b])=>{k++;return [g,MESES.map((_,i)=>val(b,i,k))];});
+    const tot=MESES.map((_,i)=>subs.reduce((a,s)=>s[1][i]==null?null:(a??0)+s[1][i],0));
+    tot.forEach((v,i)=>acc[i]+=v||0);
+    const op=dreOpen.has(li);
+    rows+=`<tr style="cursor:pointer;font-weight:600" onclick="dreOpen.has(${li})?dreOpen.delete(${li}):dreOpen.add(${li});render()"><td>${op?'▾':'▸'} ${l[0]}</td>${cells(tot)}</tr>`;
+    if(op)rows+=subs.map(s=>`<tr style="font-size:12.5px;color:var(--muted)"><td style="padding-left:28px">${s[0]}</td>${cells(s[1])}</tr>`).join('');
+  });
+  const ab=dreAbaixo.map(([n,b],j)=>`<tr><td>${n}</td>${cells(MESES.map((_,i)=>b===0?0:val(b,i,j+40)))}</tr>`).join('');
+  const opt=(arr,v)=>arr.map(([kk,t])=>`<option value="${kk}" ${v===kk?'selected':''}>${t}</option>`).join('');
+  return header('DRE / Análise do fluxo','Resultado por mês, regime de caixa, com filtro por conta')+`
+  <div class="filters">
+    <select onchange="dreCt=this.value;render()">${opt([['','Todas as contas'],...contas.filter(c=>c.t!=='Aplicação').map(c=>[c.n,c.n])],dreCt)}</select>
+    <div class="tabs" style="margin:0;border:0">${[['real','Realizado'],['prev','Previsto'],['comb','Realizado + previsto']].map(([kk,t])=>`<button class="${dreModo===kk?'on':''}" onclick="dreModo='${kk}';render()">${t}</button>`).join('')}</div>
+    <span style="flex:1"></span><button class="btn ghost" onclick="dreOpen=new Set(dreEstrut.map((_,i)=>i));render()">Expandir tudo</button><button class="btn ghost" onclick="dreOpen.clear();render()">Recolher</button>
+    <button class="btn ghost" onclick="toast('No app: exporta para Excel e PDF')">Exportar</button>
+  </div>
+  <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr><th style="min-width:210px">Linha / grupo</th>${MESES.map(m=>`<th class="r">${m}</th>`).join('')}<th class="r">Total</th></tr></thead><tbody>${rows}
+    <tr><td colspan="14" style="padding-top:18px;font-weight:700;color:var(--navy);border-bottom:1px solid var(--line)">Movimentações de caixa fora do resultado</td></tr>${ab}
+  </tbody></table>
+  <p style="font-size:12px;color:var(--muted);margin:10px 0 0">Clique numa linha para ver os grupos. Valores em R$. ${dreCt?'Filtrado pela conta '+dreCt+'.':''}</p></div>`;
+}
+
+/* ---------- Cadastros ---------- */
+let cadTab='contas';
+function vCadastros(){
+  const tb=[['contas','Contas'],['cartoes','Cartões'],['plano','Plano de contas'],['formas','Formas de pagamento']];
+  let body='';
+  if(cadTab==='contas')body=`<table><thead><tr><th>Conta</th><th>Tipo</th><th class="r">Saldo inicial 2026</th><th class="r">Saldo atual</th><th>Situação</th><th class="r"></th></tr></thead><tbody>
+    ${contas.map(c=>`<tr><td>${c.n}</td><td>${c.t}</td><td class="r">${fmt(c.s*0.8)}</td><td class="r">${fmt(c.s)}</td><td><span class="st pago">Ativa</span></td><td class="r"><button class="btn ghost" style="padding:4px 10px">Editar</button></td></tr>`).join('')}</tbody></table>`;
+  if(cadTab==='cartoes')body=`<table><thead><tr><th>Cartão</th><th class="c">Dia de fechamento</th><th class="c">Dia de vencimento</th><th>Débito automático</th><th>Situação</th><th class="r"></th></tr></thead><tbody>
+    ${cartoes.map(c=>`<tr><td>${c.n}</td><td class="c"><input type="number" min="1" max="31" value="${c.fech}" style="width:64px;text-align:center"></td><td class="c"><input type="number" min="1" max="31" value="${c.venc}" style="width:64px;text-align:center"></td><td>Não</td><td><span class="st pago">Ativo</span></td><td class="r"><button class="btn ghost" style="padding:4px 10px">Editar</button></td></tr>`).join('')}</tbody></table>
+    <p style="font-size:12px;color:var(--muted);margin:10px 0 0">Fechamento provisório: 7 dias antes do vencimento. Ajuste conforme o cartão.</p>`;
+  if(cadTab==='plano')body=`<table><thead><tr><th>Grupo</th><th>Tipo</th><th>Linha do DRE</th><th>Subgrupos</th><th>Visível ao perfil Consulta</th><th class="r"></th></tr></thead><tbody>
+    ${[['Honorários','Receita','Receita de serviços','Mensalidade, Alteração, Constituição, Consultoria +8','Sim'],['IRPF','Receita','Receita de serviços','IRPF2026, GCAP2026','Sim'],['Certificação','Receita / Custo','Receita de serviços / Custos diretos','Receita, Mensalidade, Custo','Sim'],['Operação','Despesa','Custos diretos','JUCESP, Cartório, Certidões +5','Sim'],['Funcionários','Despesa','Despesas com pessoal','Folha, FGTS, Benefícios, IRRF +2','Não'],['Administrativas','Despesa','Despesas administrativas','Energia, Telecomunicação, Condomínio +12','Sim'],['Informática','Despesa','Despesas administrativas','Sistemas, Nuvem, Microsoft, Backup +6','Sim'],['Impostos','Despesa','Impostos e taxas','Simples Nacional, IPTU, IRRF, Taxas','Sim'],['Pró-labore','Despesa','Remuneração dos sócios','Diretoria, Plano de Saúde','Não'],['Distribuição de lucros','Movimentação','Fora do resultado: Sócios','Diretoria, Plano de Saúde','Não'],['Equipamentos','Movimentação','Fora do resultado: Investimentos','Notebooks, Monitor, Impressoras +3','Sim'],['Transferências','Movimentação','Fora do resultado: Entre contas','Aplicação, Resgate','Sim']].map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td style="color:var(--muted)">${r[3]}</td><td>${r[4]==='Sim'?'<span class="st pago">Sim</span>':'<span class="st venc">Não</span>'}</td><td class="r"><button class="btn ghost" style="padding:4px 10px">Editar</button></td></tr>`).join('')}</tbody></table>
+    <p style="font-size:12px;color:var(--muted);margin:10px 0 0">Exibindo 12 dos 36 grupos. Ao mudar a linha do DRE de um grupo, todos os relatórios se ajustam, inclusive os anos anteriores.</p>`;
+  if(cadTab==='formas')body=`<table><thead><tr><th>Forma de pagamento</th><th>Uso</th><th>Situação</th></tr></thead><tbody>${['Boleto','PIX','Débito em conta','Transferência (TED)','Espécie','Cartão de crédito'].map(f=>`<tr><td>${f}</td><td>Entradas e saídas</td><td><span class="st pago">Ativa</span></td></tr>`).join('')}</tbody></table>`;
+  return header('Cadastros','Contas, cartões, plano de contas e formas de pagamento')+`
+  <div class="card"><div class="filters" style="justify-content:space-between"><div class="tabs" style="margin:0">${tb.map(([kk,t])=>`<button class="${cadTab===kk?'on':''}" onclick="cadTab='${kk}';render()">${t}</button>`).join('')}</div><button class="btn gold" onclick="toast('No app: formulário de inclusão')">+ Incluir</button></div>${body}</div>`;
+}
+
+/* ---------- Usuários ---------- */
+const usuarios=[['Reginaldo Monteiro dos Santos','reginaldo@rmscontabil.com.br','Diretor','Ativo','03/11 13:20'],['Sócia (diretora)','diretoria@rmscontabil.com.br','Diretor','Ativo','03/11 09:12'],['Colaborador financeiro','financeiro@rmscontabil.com.br','Financeiro','Ativo','31/10 17:45'],['Colaborador administrativo','adm@rmscontabil.com.br','Consulta','Convite enviado','·']];
+function vUsuarios(){
+  const mat=[['Dashboard','Completo','Completo','Sem saldos de aplicação'],['Lançamentos e contas a pagar','Edita','Edita','Não acessa'],['Contas a receber','Edita','Edita','Visualiza'],['Cartões','Edita','Edita','Não acessa'],['DRE e comparativos','Completo','Completo','Relatórios liberados'],['Pessoal, pró-labore e sócios','Vê detalhe','Vê só totais','Não vê'],['Cadastros, usuários e importação','Edita','Não acessa','Não acessa']];
+  const cl=v=>/Não/.test(v)?'venc':/Edita|Completo|detalhe/.test(v)?'pago':'conf';
+  return header('Usuários e permissões','Quem acessa o app e o que cada perfil pode ver')+`
+  <div class="card"><h3>Usuários <button class="btn gold" onclick="convite()">+ Convidar usuário</button></h3>
+    <table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Situação</th><th>Último acesso</th><th class="r"></th></tr></thead><tbody>
+    ${usuarios.map(u=>`<tr><td>${u[0]}</td><td>${u[1]}</td><td><select>${['Diretor','Financeiro','Consulta'].map(p=>`<option ${p===u[2]?'selected':''}>${p}</option>`).join('')}</select></td><td><span class="st ${u[3]==='Ativo'?'pago':'conf'}">${u[3]}</span></td><td>${u[4]}</td><td class="r"><button class="btn ghost" style="padding:4px 10px">${u[3]==='Ativo'?'Desativar':'Reenviar'}</button></td></tr>`).join('')}
+    </tbody></table></div>
+  <div class="card mt"><h3>Matriz de permissões <small>em avaliação no uso prático</small></h3>
+    <table><thead><tr><th>Recurso</th><th>Diretor</th><th>Financeiro</th><th>Consulta</th></tr></thead><tbody>
+    ${mat.map(r=>`<tr><td>${r[0]}</td>${r.slice(1).map(v=>`<td><span class="st ${cl(v)}">${v}</span></td>`).join('')}</tr>`).join('')}
+    </tbody></table></div>`;
+}
+function convite(){openModal(`<h2>Convidar usuário</h2><form class="form" onsubmit="event.preventDefault();closeModal();toast('Convite registrado (no app, enviado por e-mail)')">
+  <label class="full">Nome<input required></label><label class="full">E-mail<input type="email" required placeholder="nome@rmscontabil.com.br"></label>
+  <label>Perfil<select><option>Consulta</option><option>Financeiro</option><option>Diretor</option></select></label>
+  <label>Relatórios liberados (Consulta)<select><option>Dashboard e comparativos</option><option>Só dashboard</option></select></label>
+  <div class="actions full"><button type="button" class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn">Enviar convite</button></div></form>`);}
+
+/* ---------- Importação ---------- */
+let impStep=1;
+function vImportacao(){
+  const steps=['Arquivo','Conferência','Pendências','Confirmação'];
+  const bar=`<div style="display:flex;gap:8px;margin-bottom:18px">${steps.map((s,i)=>`<div style="flex:1;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:600;background:${i+1===impStep?'var(--navy)':i+1<impStep?'var(--pos-bg)':'var(--paper)'};color:${i+1===impStep?'var(--ivory)':i+1<impStep?'var(--pos)':'var(--muted)'};border:1px solid var(--line)">${i+1}. ${s}</div>`).join('')}</div>`;
+  let b='';
+  if(impStep===1)b=`<div class="card" style="text-align:center;padding:40px"><h3 style="justify-content:center">Selecione a planilha de fluxo de caixa</h3><p style="color:var(--muted)">Mesmo modelo da aba "Fluxo de caixa" (.xlsx ou .xlsm). Um arquivo por ano.</p>
+    <div class="filters" style="justify-content:center"><select><option>Ano: 2025</option><option>2024</option><option>2023</option></select><input type="file" accept=".xlsx,.xlsm"></div>
+    <button class="btn gold mt" onclick="impStep=2;render()">Ler planilha</button></div>`;
+  if(impStep===2)b=`<div class="grid g4"><div class="card kpi"><div class="lbl">Linhas lidas</div><div class="val">4.771</div></div><div class="card kpi"><div class="lbl">Lançamentos</div><div class="val">4.752</div><div class="sub">1.217 entradas · 3.535 saídas</div></div><div class="card kpi"><div class="lbl">Compras de cartão</div><div class="val">588</div><div class="sub">em 48 faturas</div></div><div class="card kpi"><div class="lbl">Saldos iniciais</div><div class="val">6</div><div class="sub">contas</div></div></div>
+    <div class="card mt"><h3>Conferência por mês <small>totais da planilha x totais importados</small></h3><table><thead><tr><th>Mês</th><th class="r">Entradas</th><th class="r">Saídas</th><th class="r">Saldo final planilha</th><th class="r">Saldo final importado</th><th>Situação</th></tr></thead><tbody>
+    ${MESES.slice(0,6).map((m,i)=>{const e=rec25[i],s=des25[i];return `<tr><td>${m}/2025</td><td class="r">${fmt(e)}</td><td class="r">${fmt(s)}</td><td class="r">${fmt(300000+i*4100)}</td><td class="r">${fmt(300000+i*4100)}</td><td><span class="st pago">Confere</span></td></tr>`;}).join('')}
+    <tr><td colspan="6" class="c" style="color:var(--muted)">+ 6 meses</td></tr></tbody></table>
+    <div class="actions"><button class="btn ghost" onclick="impStep=1;render()">Voltar</button><button class="btn" onclick="impStep=3;render()">Avançar</button></div></div>`;
+  if(impStep===3)b=`<div class="card"><h3>Pendências para revisar <small>nada é importado sem a sua decisão</small></h3><table><thead><tr><th>Ocorrência</th><th class="r">Linhas</th><th>Sugestão</th><th>Decisão</th></tr></thead><tbody>
+    <tr><td>Faturas de cartão pagas pela conta "Caixa" (espécie)</td><td class="r">253</td><td>Indicar a conta real de pagamento</td><td><select><option>Revisar uma a uma</option><option>Usar Inter</option><option>Usar Efí</option></select></td></tr>
+    <tr><td>Lançamentos sem conta informada</td><td class="r">56</td><td>Importar como Previsto, conta a definir</td><td><select><option>Aceitar sugestão</option><option>Revisar</option></select></td></tr>
+    <tr><td>Grupo "Estimativa"</td><td class="r">3</td><td>Converter em lançamento Previsto</td><td><select><option>Aceitar sugestão</option><option>Ignorar</option></select></td></tr>
+    <tr><td>Subgrupos com grafia diferente (ex.: "B. Diniz" e "B.Diniz")</td><td class="r">12</td><td>Unificar</td><td><select><option>Aceitar sugestão</option><option>Manter separado</option></select></td></tr>
+    <tr><td>Célula de valor com cor fora da legenda</td><td class="r">3</td><td>Importar como Previsto</td><td><select><option>Aceitar sugestão</option><option>Revisar</option></select></td></tr>
+    </tbody></table><div class="actions"><button class="btn ghost" onclick="impStep=2;render()">Voltar</button><button class="btn" onclick="impStep=4;render()">Avançar</button></div></div>`;
+  if(impStep===4)b=`<div class="card" style="text-align:center;padding:40px"><h3 style="justify-content:center">Pronto para importar 2025</h3><p style="color:var(--muted)">4.752 lançamentos, 588 compras de cartão e 6 saldos iniciais. A importação pode ser desfeita em até 7 dias.</p>
+    <div class="actions" style="justify-content:center"><button class="btn ghost" onclick="impStep=3;render()">Voltar</button><button class="btn gold" onclick="impStep=1;toast('Simulação: importação concluída');render()">Importar</button></div></div>`;
+  return header('Importação','Carga das planilhas de anos anteriores, com conferência antes de gravar')+bar+b;
+}
+
 function vSoon(t){return header(t,'Tela prevista na especificação')+`<div class="card empty"><h3 style="margin-bottom:8px">Em definição</h3>Esta tela segue o mesmo padrão visual e entra na próxima rodada de layout.</div>`;}
 
 const VIEWS={dashboard:vDashboard,lancamentos:vLancamentos,cartoes:vCartoes,comparativos:vComparativos,
-  pagar:()=>vSoon('Contas a pagar'),receber:()=>vSoon('Contas a receber'),dre:()=>vSoon('DRE / Análise do fluxo'),
-  cadastros:()=>vSoon('Cadastros'),usuarios:()=>vSoon('Usuários e permissões'),importacao:()=>vSoon('Importação')};
+  pagar:vPagar,receber:vReceber,dre:vDRE,cadastros:vCadastros,usuarios:vUsuarios,importacao:vImportacao};
 function render(){const v=(location.hash||'#dashboard').slice(1);const fn=VIEWS[v]||vDashboard;
   $('#view').innerHTML=fn();document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.v===(VIEWS[v]?v:'dashboard')));}
 window.addEventListener('hashchange',()=>{render();window.scrollTo(0,0);});
