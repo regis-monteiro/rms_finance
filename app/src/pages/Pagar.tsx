@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { Link } from 'react-router-dom';
 import { supabase, type Lancamento } from '../lib/supabase';
@@ -121,8 +122,8 @@ export default function Pagar() {
             <form className="form" onSubmit={confirmar}>
               <label>Data do pagamento<DataBR required value={baixa.data} onChange={e => setBaixa({ ...baixa, data: e.target.value })} /></label>
               <label>Conta<select required value={baixa.conta} onChange={e => setBaixa({ ...baixa, conta: e.target.value })}><option value="" disabled>Selecione</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
-              <label>Valor pago (R$)<input type="number" step="0.01" min="0.01" required value={baixa.valor} onChange={e => setBaixa({ ...baixa, valor: e.target.value })} /></label>
-              <label>Juros / multa (R$)<input type="number" step="0.01" min="0" value={baixa.juros} onChange={e => setBaixa({ ...baixa, juros: e.target.value })} /></label>
+              <label>Valor pago (R$)<CampoValor min="0.01" required value={baixa.valor} onChange={e => setBaixa({ ...baixa, valor: e.target.value })} /></label>
+              <label>Juros / multa (R$)<CampoValor min="0" value={baixa.juros} onChange={e => setBaixa({ ...baixa, juros: e.target.value })} /></label>
               <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Valor menor que o total registra pagamento parcial; a diferença continua em aberto. Multa e juros entram como lançamento separado em Despesas financeiras · Multa/juros por atraso.</p>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full"><button type="button" className="btn ghost" onClick={() => setBaixa(null)}>Cancelar</button><button className="btn">Confirmar baixa</button></div>

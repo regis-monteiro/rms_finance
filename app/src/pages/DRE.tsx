@@ -3,6 +3,9 @@ import { useCadastros } from '../lib/useCadastros';
 import { carregarDRE, useAnos, useLinhasDRE, valorModo, SUBTOTAIS, type Modo, type PontoDRE } from '../lib/analises';
 import { MESES_CURTOS } from '../lib/graficos';
 import { Cabecalho } from '../components/Layout';
+import { ModalEmissao } from '../components/Emissao';
+import { gerarExcel, gerarPDF, type Linha } from '../lib/relatorios';
+import { useAuth } from '../lib/auth';
 
 const n = (v: number) => Math.round(v).toLocaleString('pt-BR');
 
@@ -16,6 +19,9 @@ export default function DRE() {
   const [abertas, setAbertas] = useState<Set<number>>(new Set());
   const [pontos, setPontos] = useState<PontoDRE[]>([]);
   const [erro, setErro] = useState('');
+  const [emitir, setEmitir] = useState(false);
+  const [comGrupos, setComGrupos] = useState(true);
+  const { usuario } = useAuth();
 
   useEffect(() => { setErro(''); carregarDRE(ano, conta).then(setPontos).catch(e => setErro(e.message)); }, [ano, conta]);
 
@@ -55,6 +61,33 @@ export default function DRE() {
     );
   };
 
+  /** Linhas do relatório (mesma estrutura da tela) */
+  function linhasRelatorio(): Linha[] {
+    const out: Linha[] = []; let ac = Array(12).fill(0) as number[];
+    const lin = (nome: string, a: number[], estilo?: Linha['_estilo']) => { const o: Linha = { l: nome, t: soma(a), _estilo: estilo }; a.forEach((v, i) => (o['m' + i] = v)); out.push(o); };
+    const bloco = (l: typeof linhas[number], conta: boolean) => {
+      const t = totLinha(l.id); if (conta) ac = ac.map((v, i) => v + t[i]);
+      lin(l.nome, t);
+      if (comGrupos) [...(tabela.get(l.id)?.entries() || [])].sort((a, b) => Math.abs(soma(b[1])) - Math.abs(soma(a[1]))).forEach(([g, a]) => lin(nomeG(g), a, 'grupo'));
+      const sub = SUBTOTAIS.find(x => x[0] === l.ordem); if (sub && conta) lin(sub[1], [...ac], 'sub');
+    };
+    resultado.forEach(l => bloco(l, true));
+    const res = [...ac];
+    out.push({ l: 'Movimentações de caixa fora do resultado', _estilo: 'sub' });
+    fora.forEach(l => bloco(l, false));
+    lin('Variação do caixa no mês', res.map((v, i) => v + fora.reduce((x, l) => x + totLinha(l.id)[i], 0)), 'total');
+    return out;
+  }
+  async function emitirRelatorio(f: 'pdf' | 'xlsx', assinaturas: import('../components/Signatarios').Signatario[]) {
+    const nomeConta = conta ? contas.find(c => c.id === conta)?.nome : null;
+    const r = { titulo: 'DRE · Análise do fluxo de caixa', arquivo: `DRE_${ano}`, paisagem: true, usuario: usuario?.nome || usuario?.email || '',
+      periodo: `01/01/${ano} a 31/12/${ano}`, assinaturas,
+      filtros: [nomeConta ? 'Conta: ' + nomeConta : 'Todas as contas', modo === 'real' ? 'Realizado' : modo === 'prev' ? 'Previsto' : 'Realizado + previsto'].join(' · '),
+      observacao: 'Regime de caixa: realizado pela data de pagamento e previsto pelo vencimento. Compras de cartão entram no mês de vencimento da fatura. Valores em R$.',
+      secoes: [{ colunas: [{ titulo: 'Linha / grupo', chave: 'l', largura: 46 }, ...MESES_CURTOS.map((m, i) => ({ titulo: m, chave: 'm' + i, tipo: 'numero' as const })), { titulo: 'Total', chave: 't', tipo: 'numero' as const }], linhas: linhasRelatorio() }] };
+    f === 'pdf' ? await gerarPDF(r) : await gerarExcel(r);
+  }
+
   function exportar() {
     const csv = linhasCsv.map(r => r.map(c => `"${/^-?\d+\.\d+$/.test(c) ? c.replace('.', ',') : c}"`).join(';')).join('\n');
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
@@ -70,7 +103,8 @@ export default function DRE() {
   return (
     <>
       <Cabecalho titulo="DRE / Análise do fluxo" sub="Resultado por mês, regime de caixa, com filtro por conta">
-        <button className="btn ghost" onClick={exportar}>Exportar CSV</button>
+        <button className="btn ghost" onClick={exportar}>CSV</button>
+        <button className="btn" onClick={() => setEmitir(true)}>Emitir PDF / Excel</button>
       </Cabecalho>
       <div className="filters">
         <select value={ano} onChange={e => setAno(Number(e.target.value))}>{anos.map(a => <option key={a}>{a}</option>)}</select>
@@ -93,6 +127,8 @@ export default function DRE() {
         </table>
         <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Valores em R$. Realizado pela data de pagamento; previsto pelo vencimento. Compras de cartão entram no mês de vencimento da fatura{conta ? ', na proporção paga por esta conta' : ''}. Clique numa linha para ver os grupos.</p>
       </div>
+      {emitir && <ModalEmissao titulo={`DRE ${ano}`} assinatura aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio}
+        extras={<label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginBottom: 8 }}><input type="checkbox" checked={comGrupos} onChange={e => setComGrupos(e.target.checked)} /> Incluir o detalhamento por grupo</label>} />}
     </>
   );
 }

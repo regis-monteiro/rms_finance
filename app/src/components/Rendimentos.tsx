@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import CampoValor from './CampoValor';
 import DataBR from './DataBR';
 import { supabase } from '../lib/supabase';
 import { brl, dataBR, hojeISO } from '../lib/format';
@@ -116,7 +117,7 @@ export default function Rendimentos({ mes }: { mes: string }) {
   async function inativar(a: Aplic) { await supabase.from('aplicacoes').update({ ativo: !a.ativo }).eq('id', a.id); setVersao(v => v + 1); }
 
   const porConta = useMemo(() => contasAF.map(c => ({ c, itens: aplics.filter(a => a.conta_id === c.id && (a.ativo || atual.some(p => p.aplicacao_id === a.id))) })), [contasAF, aplics, atual]);
-  const inp = (id: number, k: keyof Edit, travado: boolean) => <input type="number" step="0.01" value={ed[id]?.[k] ?? ''} disabled={travado} onChange={e => set(id, k, e.target.value)} style={{ width: 118, textAlign: 'right' }} />;
+  const inp = (id: number, k: keyof Edit, travado: boolean) => <CampoValor value={ed[id]?.[k] ?? ''} disabled={travado} onChange={e => set(id, k, e.target.value)} style={{ width: 118, textAlign: 'right' }} />;
   const pendentes = aplics.filter(a => a.ativo && !atual.find(p => p.aplicacao_id === a.id)?.data_confirmacao && calc(a.id)).length;
 
   return (

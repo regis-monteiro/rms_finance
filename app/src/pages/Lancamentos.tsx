@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { supabase, type Lancamento, type Status } from '../lib/supabase';
 import { brl, dataBR, diaMes, hojeISO, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
@@ -190,7 +191,7 @@ export default function Lancamentos() {
               <label>Tipo<select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value as 'entrada' | 'saida' })}><option value="saida">Saída</option><option value="entrada">Entrada</option></select></label>
               <label>Conta<select value={form.conta_id ?? ''} onChange={e => setForm({ ...form, conta_id: e.target.value ? Number(e.target.value) : null })}><option value="">A definir</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
               <label>Vencimento<DataBR required value={form.vencimento} onChange={e => setForm({ ...form, vencimento: e.target.value })} /></label>
-              <label>Valor (R$)<input type="number" step="0.01" min="0.01" required value={form.valor ?? ''} onChange={e => setForm({ ...form, valor: e.target.value as unknown as number })} /></label>
+              <label>Valor (R$)<CampoValor min="0.01" required value={form.valor ?? ''} onChange={e => setForm({ ...form, valor: e.target.value as unknown as number })} /></label>
               <label>Grupo<select required value={form.grupo_id ?? ''} onChange={e => setForm({ ...form, grupo_id: Number(e.target.value), subgrupo_id: null })}><option value="" disabled>Selecione</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
               <label>Subgrupo<select value={form.subgrupo_id ?? ''} onChange={e => setForm({ ...form, subgrupo_id: e.target.value ? Number(e.target.value) : null })}><option value="">·</option>{subsDoGrupo.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
               <label className="full">Beneficiário cadastrado{exigeBenef ? ' *' : ' (opcional até 31/12/2026)'}
@@ -207,7 +208,7 @@ export default function Lancamentos() {
               <label>Forma de pagamento<select value={form.forma_pagamento ?? ''} onChange={e => setForm({ ...form, forma_pagamento: e.target.value })}>{FORMAS.map(x => <option key={x}>{x}</option>)}</select></label>
               <label>Data do {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'}<DataBR required={form.status === 'pago'} value={form.data_pagamento ?? ''}
                 onChange={e => setForm({ ...form, data_pagamento: e.target.value || null, status: e.target.value ? 'pago' : form.status === 'pago' ? 'confirmado' : form.status })} /></label>
-              <label>Multa / juros por atraso (R$)<input type="number" step="0.01" min="0" disabled={!!form.transferencia_id || !!form.fatura_id} value={form.juros_multa || ''} placeholder="0,00"
+              <label>Multa / juros por atraso (R$)<CampoValor min="0" disabled={!!form.transferencia_id || !!form.fatura_id} value={form.juros_multa || ''} placeholder="0,00"
                 onChange={e => setForm({ ...form, juros_multa: e.target.value as unknown as number })} /></label>
               {Number(form.juros_multa || 0) > 0 && <p className="full" style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
                 {brl(Number(form.juros_multa))} serão lançados em <b>{form.tipo === 'saida' ? 'Despesas financeiras' : 'Receitas financeiras'} · Multa/juros por atraso</b>, na data do {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'}{form.status !== 'pago' ? ', quando o status for Pago' : ''}. Total {form.tipo === 'entrada' ? 'recebido' : 'pago'}: {brl(Number(form.valor || 0) + Number(form.juros_multa))}.</p>}

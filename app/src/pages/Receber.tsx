@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import CampoValor from '../components/CampoValor';
 import { supabase } from '../lib/supabase';
 import { useAuth, podeEditar } from '../lib/auth';
 import { useCadastros } from '../lib/useCadastros';
@@ -79,7 +80,7 @@ export default function Receber() {
           <table><thead><tr><th>Grupo</th><th className="r">Previsto</th><th className="r">Recebido</th><th className="r">Diferença R$</th><th className="r">Realizado</th><th style={{ width: '24%' }} /></tr></thead>
             <tbody>{linhas.map(({ g, previsto, recebido }) => { const d = recebido - previsto, p = previsto ? recebido / previsto : 0; return (
               <tr key={g.id}><td>{g.nome}</td>
-                <td className="r">{edita ? <input type="number" step="0.01" key={`${g.id}-${mes}-${ano}-${previsto}`} defaultValue={previsto || ''} placeholder="0" style={{ width: 120, textAlign: 'right' }}
+                <td className="r">{edita ? <CampoValor key={`${g.id}-${mes}-${ano}-${previsto}`} defaultValue={previsto || ''} placeholder="0" style={{ width: 120, textAlign: 'right' }}
                   onBlur={e => Number(e.target.value || 0) !== previsto && salvarPrev(g.id, Number(e.target.value || 0))} /> : brl(previsto)}</td>
                 <td className="r">{brl(recebido)}</td><td className={'r ' + (d >= 0 ? 'pos' : 'neg')}>{d >= 0 ? '+' : '−'}{brl(Math.abs(d))}</td>
                 <td className="r">{p100(recebido, previsto)}</td><td><div className="bar"><i style={{ width: Math.min(100, p * 100) + '%' }} /></div></td></tr>); })}
@@ -97,7 +98,7 @@ export default function Receber() {
               <label className="full">Base<select value={gerar.base} onChange={e => setGerar({ ...gerar, base: e.target.value as 'anterior' | 'media' })}>
                 <option value="anterior">Recebido no mesmo mês de {ano - 1}{recAnt.length ? '' : ' (sem dados)'}</option>
                 <option value="media">Média mensal recebida em {ano} até o mês anterior</option></select></label>
-              <label>Reajuste (%)<input type="number" step="0.1" value={gerar.reajuste} onChange={e => setGerar({ ...gerar, reajuste: e.target.value })} /></label>
+              <label>Reajuste (%)<CampoValor casas={1} value={gerar.reajuste} onChange={e => setGerar({ ...gerar, reajuste: e.target.value })} /></label>
               <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Substitui a previsão dos 12 meses de {ano} para todos os grupos de receita. Depois, cada valor pode ser ajustado na tabela.</p>
               <div className="actions full"><button type="button" className="btn ghost" onClick={() => setGerar(null)}>Cancelar</button><button className="btn">Gerar</button></div>
             </form>

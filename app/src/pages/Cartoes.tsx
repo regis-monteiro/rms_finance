@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, type Lancamento, type Status } from '../lib/supabase';
@@ -190,7 +191,7 @@ export default function Cartoes() {
           <div className="modal"><h2>Nova compra · {cartao.nome}</h2>
             <form className="form" onSubmit={salvarCompra}>
               <label>Data da compra<DataBR required value={novaCompra.data} onChange={e => setNovaCompra({ ...novaCompra, data: e.target.value })} /></label>
-              <label>Valor total (R$)<input type="number" step="0.01" required value={novaCompra.valor} onChange={e => setNovaCompra({ ...novaCompra, valor: e.target.value })} /></label>
+              <label>Valor total (R$)<CampoValor required value={novaCompra.valor} onChange={e => setNovaCompra({ ...novaCompra, valor: e.target.value })} /></label>
               <label className="full">Estabelecimento<input required value={novaCompra.descricao} onChange={e => setNovaCompra({ ...novaCompra, descricao: e.target.value })} /></label>
               <label>Grupo<select required value={novaCompra.grupo} onChange={e => setNovaCompra({ ...novaCompra, grupo: e.target.value })}><option value="" disabled>Selecione</option>
                 {grupos.filter(g => g.natureza !== 'receita' && g.nome !== 'Pagamento de fatura').map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
@@ -213,7 +214,7 @@ export default function Cartoes() {
                 {contas.filter(c => c.ativa && c.tipo !== 'aplicacao').map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
               <label>Status<select value={pagto.status} onChange={e => setPagto({ ...pagto, status: e.target.value as Status })}><option value="pago">Pago</option><option value="agendado">Agendado</option></select></label>
               {pagto.status === 'pago' && <label>Data do pagamento<DataBR required value={pagto.data} onChange={e => setPagto({ ...pagto, data: e.target.value })} /></label>}
-              <label>Valor (R$)<input type="number" step="0.01" min="0.01" required value={pagto.valor} onChange={e => setPagto({ ...pagto, valor: e.target.value })} /></label>
+              <label>Valor (R$)<CampoValor min="0.01" required value={pagto.valor} onChange={e => setPagto({ ...pagto, valor: e.target.value })} /></label>
               <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Saldo em aberto: {brl(aberto)}{agendado > 0 && `, dos quais ${brl(agendado)} já agendados`}. Valor menor registra pagamento parcial; a diferença continua em contas a pagar.</p>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full"><button type="button" className="btn ghost" onClick={() => setPagto(null)}>Cancelar</button><button className="btn">Registrar</button></div>

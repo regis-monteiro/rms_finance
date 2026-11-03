@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { AbaSignatarios } from '../components/Signatarios';
+import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { supabase } from '../lib/supabase';
 import { useCadastros } from '../lib/useCadastros';
@@ -11,7 +13,7 @@ const TIPO = { corrente: 'Conta corrente', aplicacao: 'Aplicação', especie: 'E
 export default function Cadastros() {
   const { contas, cartoes, grupos, subgrupos, beneficiarios, recarregar } = useCadastros();
   const diretor = useAuth().usuario?.perfil === 'diretor';
-  const [aba, setAba] = useState<'beneficiarios' | 'contas' | 'cartoes' | 'grupos'>('beneficiarios');
+  const [aba, setAba] = useState<'beneficiarios' | 'contas' | 'cartoes' | 'grupos' | 'signatarios'>('beneficiarios');
   const [msg, setMsg] = useState('');
   const [novoSub, setNovoSub] = useState<{ grupo: string; nome: string }>({ grupo: '', nome: '' });
 
@@ -33,7 +35,7 @@ export default function Cadastros() {
       <Cabecalho titulo="Cadastros" sub="Beneficiários, contas, cartões e plano de contas">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}</Cabecalho>
       <div className="card">
         <div className="tabs">
-          {([['beneficiarios', 'Fornecedores / beneficiários'], ...(diretor ? [['contas', 'Contas'], ['cartoes', 'Cartões'], ['grupos', 'Plano de contas']] : [])] as [typeof aba, string][]).map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} onClick={() => setAba(k)}>{t}</button>)}
+          {([['beneficiarios', 'Fornecedores / beneficiários'], ...(diretor ? [['contas', 'Contas'], ['cartoes', 'Cartões'], ['grupos', 'Plano de contas'], ['signatarios', 'Signatários']] : [])] as [typeof aba, string][]).map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} onClick={() => setAba(k)}>{t}</button>)}
         </div>
 
         {aba === 'beneficiarios' && <AbaBeneficiarios beneficiarios={beneficiarios} grupos={grupos} subgrupos={subgrupos} recarregar={recarregar} />}
@@ -42,7 +44,7 @@ export default function Cadastros() {
           <table><thead><tr><th>Conta</th><th>Tipo</th><th className="r">Saldo inicial</th><th>Data do saldo inicial</th><th>Ativa</th></tr></thead>
             <tbody>{contas.map(c => (
               <tr key={c.id}><td>{c.nome}</td><td>{TIPO[c.tipo]}</td>
-                <td className="r"><input type="number" step="0.01" defaultValue={c.saldo_inicial} style={{ width: 140, textAlign: 'right' }} onBlur={e => Number(e.target.value) !== Number(c.saldo_inicial) && gravar('contas', c.id, 'saldo_inicial', Number(e.target.value))} /></td>
+                <td className="r"><CampoValor defaultValue={c.saldo_inicial} style={{ width: 140, textAlign: 'right' }} onBlur={e => Number(e.target.value) !== Number(c.saldo_inicial) && gravar('contas', c.id, 'saldo_inicial', Number(e.target.value))} /></td>
                 <td><DataBR defaultValue={c.data_saldo_inicial} onBlur={e => e.target.value !== c.data_saldo_inicial && gravar('contas', c.id, 'data_saldo_inicial', e.target.value)} /></td>
                 <td><input type="checkbox" checked={c.ativa} onChange={e => gravar('contas', c.id, 'ativa', e.target.checked)} /></td></tr>
             ))}</tbody></table>
@@ -60,6 +62,8 @@ export default function Cadastros() {
             <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Fechamento provisório: 7 dias antes do vencimento. Ajuste conforme cada cartão.</p>
           </>
         )}
+
+        {aba === 'signatarios' && <AbaSignatarios />}
 
         {aba === 'grupos' && (
           <>

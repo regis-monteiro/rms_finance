@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import CampoValor from '../components/CampoValor';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useCadastros } from '../lib/useCadastros';
@@ -93,7 +94,7 @@ export default function Orcamento() {
         const a = orcPorGrupo.get(g.id) || zeros;
         if (!diretor && (g.restrito || !soma(a.map(Math.abs)))) return;
         out.push(<tr key={'g' + g.id} style={{ fontSize: 12.5, color: 'var(--muted)' }}><td style={{ paddingLeft: 26 }}>{g.nome}</td>
-          {a.map((v, i) => <td key={i} className="r">{diretor ? <input key={`${g.id}-${i}-${v}`} type="number" step="10" defaultValue={v || ''} placeholder="·" style={{ width: 78, textAlign: 'right', padding: '3px 5px', fontSize: 12 }} onBlur={e => Number(e.target.value || 0) !== v && editarCelula(g.id, i + 1, Number(e.target.value || 0))} /> : (v ? n0(v) : '·')}</td>)}
+          {a.map((v, i) => <td key={i} className="r">{diretor ? <CampoValor key={`${g.id}-${i}-${v}`} casas={0} defaultValue={v || ''} placeholder="·" style={{ width: 78, textAlign: 'right', padding: '3px 5px', fontSize: 12 }} onBlur={e => Number(e.target.value || 0) !== v && editarCelula(g.id, i + 1, Number(e.target.value || 0))} /> : (v ? n0(v) : '·')}</td>)}
           <td className="r">{n0(soma(a))}</td></tr>);
       });
       const sub = SUBTOTAIS.find(s => s[0] === l.ordem);

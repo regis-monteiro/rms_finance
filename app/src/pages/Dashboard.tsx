@@ -5,6 +5,9 @@ import { useAuth, podeEditar } from '../lib/auth';
 import { brl, diaMes, hojeISO, somaDias, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
 import { useCadastros } from '../lib/useCadastros';
 import { Cabecalho } from '../components/Layout';
+import { ModalEmissao } from '../components/Emissao';
+import { gerarExcel, gerarPDF, type Linha, type Secao } from '../lib/relatorios';
+import type { Signatario } from '../components/Signatarios';
 import { carregarDRE, resultadoMensal, useLinhasDRE, linhaMensal, type PontoDRE, MESES_LONGOS } from '../lib/analises';
 
 interface Saldo { id: number; nome: string; tipo: string; saldo: number }
@@ -19,6 +22,7 @@ export default function Dashboard() {
   const [faturas, setFaturas] = useState<Fatura[]>([]);
   const [dre, setDre] = useState<PontoDRE[]>([]);
   const linhasDre = useLinhasDRE();
+  const [emitir, setEmitir] = useState(false);
   const hoje = hojeISO(), [anoH, mesH] = hoje.split('-').map(Number), fimMes = `${hoje.slice(0, 8)}${new Date(anoH, mesH, 0).getDate()}`;
 
   useEffect(() => {
@@ -40,9 +44,33 @@ export default function Dashboard() {
   const nomeConta = (id: number | null) => contas.find(c => c.id === id)?.nome || 'A definir';
   const nomeGrupo = (id: number) => grupos.find(g => g.id === id)?.nome || '';
 
+  async function emitirRelatorio(f: 'pdf' | 'xlsx', assinaturas: Signatario[]) {
+    const res = resultadoMensal(dre, linhasDre, 'real'), rec = linhaMensal(dre, linhasDre.find(l => l.ordem === 10)?.id, 'real'), prev = resultadoMensal(dre, linhasDre, 'prev');
+    const m = mesH - 1, acum = res.reduce((a, b) => a + b, 0);
+    const posicao = hoje.split('-').reverse().join('/');
+    const secoes: Secao[] = [
+      { titulo: 'Saldos das contas', colunas: [{ titulo: 'Conta', chave: 'c' }, { titulo: 'Tipo', chave: 't' }, { titulo: 'Saldo', chave: 'v', tipo: 'moeda' as const }],
+        linhas: [...saldos.map(x => ({ c: x.nome, t: TIPO[x.tipo], v: Number(x.saldo) })), { c: 'Saldo total', v: total, _estilo: 'total' as const }] as Linha[] },
+      { titulo: `Resultado ${anoH} (realizado)`, colunas: [{ titulo: 'Mês', chave: 'm' }, { titulo: 'Receita de serviços', chave: 'r', tipo: 'moeda' as const }, { titulo: 'Resultado líquido', chave: 'l', tipo: 'moeda' as const }],
+        linhas: [...MESES_LONGOS.slice(0, m + 1).map((n, i) => ({ m: n, r: rec[i], l: res[i] })), { m: 'Acumulado', r: rec.reduce((a, b) => a + b, 0), l: acum, _estilo: 'total' as const }] as Linha[] },
+    ];
+    if (podeEditar(usuario?.perfil)) {
+      secoes.push({ titulo: 'Contas a pagar até o fim do mês', colunas: [{ titulo: 'Vencimento', chave: 'd', tipo: 'data' as const }, { titulo: 'Favorecido', chave: 'f' }, { titulo: 'Grupo', chave: 'g' }, { titulo: 'Conta', chave: 'c' }, { titulo: 'Status', chave: 's' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' as const }],
+        linhas: [...abertos.map(l => ({ d: l.vencimento, f: l.favorecido, g: nomeGrupo(l.grupo_id), c: nomeConta(l.conta_id), s: STATUS_LABEL[statusEfetivo(l.status, l.vencimento)], v: Number(l.valor) })),
+          { f: 'Vencidas', v: soma(vencidos), _estilo: 'sub' as const }, { f: 'Próximos 7 dias', v: soma(em7), _estilo: 'sub' as const }, { f: 'Restante do mês', v: soma(resto), _estilo: 'sub' as const }, { f: 'Total', v: soma(abertos), _estilo: 'total' as const }] as Linha[] });
+      if (faturas.length) secoes.push({ titulo: 'Faturas de cartão em aberto', colunas: [{ titulo: 'Cartão', chave: 'c' }, { titulo: 'Vencimento', chave: 'd', tipo: 'data' as const }, { titulo: 'Em aberto', chave: 'v', tipo: 'moeda' as const }],
+        linhas: [...faturas.map(x => ({ c: x.cartao, d: x.data_vencimento, v: x.total - x.pago })), { c: 'Total', v: faturas.reduce((a, x) => a + x.total - x.pago, 0), _estilo: 'total' as const }] as Linha[] });
+    }
+    const r = { titulo: 'Dashboard financeiro', arquivo: 'dashboard', usuario: usuario?.nome || usuario?.email || '', periodo: `Posição em ${posicao}`, assinaturas,
+      resumo: [{ rotulo: 'Saldo total', valor: brl(total) }, { rotulo: `Resultado de ${m ? MESES_LONGOS[m - 1].toLowerCase() : '·'}`, valor: m ? brl(res[m - 1]) : '·' }, { rotulo: `Acumulado ${anoH}`, valor: brl(acum) }, { rotulo: 'Previsto até dezembro', valor: brl(prev.reduce((a, b) => a + b, 0)) }],
+      secoes, observacao: 'Resultados em regime de caixa (realizado pela data de pagamento). Saldos conforme lançamentos pagos até a data de emissão.' };
+    f === 'pdf' ? await gerarPDF(r) : await gerarExcel(r);
+  }
+
   return (
     <>
-      <Cabecalho titulo="Dashboard" sub={'Posição em ' + hoje.split('-').reverse().join('/')} />
+      <Cabecalho titulo="Dashboard" sub={'Posição em ' + hoje.split('-').reverse().join('/')}><button className="btn" onClick={() => setEmitir(true)}>Emitir PDF / Excel</button></Cabecalho>
+      {emitir && <ModalEmissao titulo="Dashboard" assinatura aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio} />}
       <div className="grid g4">
         <div className="card kpi total"><div className="lbl">Saldo total</div><div className="val">{brl(total)}</div><div className="sub">{saldos.length} contas</div></div>
         {saldos.map(s => (
