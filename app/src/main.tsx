@@ -12,6 +12,7 @@ import Cadastros from './pages/Cadastros';
 import EmBreve from './pages/EmBreve';
 import Pagar from './pages/Pagar';
 import Cartoes from './pages/Cartoes';
+import Usuarios from './pages/Usuarios';
 
 function App() {
   const { session, usuario, carregando } = useAuth();
@@ -32,7 +33,7 @@ function App() {
         <Route path="dre" element={<EmBreve titulo="DRE / Análise do fluxo" />} />
         <Route path="comparativos" element={<EmBreve titulo="Comparativos" />} />
         <Route path="cadastros" element={so(opera, <Cadastros />)} />
-        <Route path="usuarios" element={so(dir, <EmBreve titulo="Usuários" />)} />
+        <Route path="usuarios" element={so(dir, <Usuarios />)} />
         <Route path="importacao" element={so(dir, <EmBreve titulo="Importação" />)} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
