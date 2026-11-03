@@ -3,13 +3,18 @@ import { supabase, type Lancamento, type Status } from '../lib/supabase';
 import { brl, diaMes, hojeISO, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
 import { useCadastros } from '../lib/useCadastros';
 import { Cabecalho } from '../components/Layout';
+import { FormBeneficiario } from '../components/Beneficiarios';
+import { formatarDocumento } from '../lib/documento';
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const FORMAS = ['Boleto', 'PIX', 'Débito em conta', 'Transferência (TED)', 'Espécie'];
 type Form = Partial<Lancamento>;
+const rotulo = (b?: { nome: string; documento: string }) => (b ? `${b.nome} · ${formatarDocumento(b.documento)}` : '');
 
 export default function Lancamentos() {
-  const { contas, grupos, subgrupos } = useCadastros();
+  const { contas, grupos, subgrupos, beneficiarios, recarregar } = useCadastros();
+  const [novoBenef, setNovoBenef] = useState(false);
+  const [buscaBenef, setBuscaBenef] = useState('');
   const hoje = hojeISO();
   const [mes, setMes] = useState(hoje.slice(0, 7));
   const [lista, setLista] = useState<Lancamento[]>([]);
@@ -42,6 +47,7 @@ export default function Lancamentos() {
     const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null,
       data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null, atualizado_em: new Date().toISOString() };
     if (form.status === 'pago' && !dados.conta_id) { setErro('Para marcar como Pago, informe a conta.'); return; }
+    if (exigeBenef && !form.beneficiario_id) { setErro('A partir de 01/01/2027, escolha um beneficiário cadastrado.'); return; }
     const { error } = form.id ? await supabase.from('lancamentos').update(dados).eq('id', form.id) : await supabase.from('lancamentos').insert(dados);
     if (error) { setErro(error.message); return; }
     setForm(null); setVersao(v => v + 1);
@@ -66,8 +72,18 @@ export default function Lancamentos() {
     setForm(null); setVersao(v => v + 1);
   }
 
-  const novo = () => { setErro(''); setForm({ tipo: 'saida', vencimento: hoje, status: 'previsto', forma_pagamento: 'Boleto', favorecido: '', valor: undefined }); };
+  const abrir = (l: Form) => { setErro(''); setBuscaBenef(rotulo(beneficiarios.find(b => b.id === l.beneficiario_id))); setForm(l); };
+  const novo = () => { setErro(''); setBuscaBenef(''); setForm({ tipo: 'saida', vencimento: hoje, status: 'previsto', forma_pagamento: 'Boleto', favorecido: '', valor: undefined }); };
   const subsDoGrupo = subgrupos.filter(s => s.grupo_id === Number(form?.grupo_id));
+  const grupoForm = grupos.find(g => g.id === Number(form?.grupo_id));
+  const exigeBenef = !!form && form.tipo === 'saida' && (form.vencimento || '') >= '2027-01-01' && !form.fatura_id && !['Transferências', 'Pagamento de fatura'].includes(grupoForm?.nome || '');
+  function escolherBenef(texto: string) {
+    setBuscaBenef(texto);
+    const b = beneficiarios.find(x => rotulo(x) === texto);
+    if (!form) return;
+    if (!b) { if (!texto) setForm({ ...form, beneficiario_id: null }); return; }
+    setForm({ ...form, beneficiario_id: b.id, favorecido: b.nome, grupo_id: form.grupo_id || b.grupo_id || undefined, subgrupo_id: form.grupo_id ? form.subgrupo_id : b.subgrupo_id });
+  }
   const [ano, m] = mes.split('-').map(Number);
 
   return (
@@ -92,7 +108,7 @@ export default function Lancamentos() {
             <thead><tr><th className="c"><input type="checkbox" onChange={e => setSel(e.target.checked ? new Set(linhas.filter(l => l.status !== 'pago').map(l => l.id)) : new Set())} /></th>
               <th>Vencimento</th><th>Tipo</th><th>Conta</th><th>Grupo</th><th>Subgrupo</th><th>Favorecido / Pagador</th><th>Ref.</th><th className="r">Valor</th><th>Status</th></tr></thead>
             <tbody>{linhas.map(l => { const s = statusEfetivo(l.status, l.vencimento); return (
-              <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => { setErro(''); setForm({ ...l }); }}>
+              <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => abrir({ ...l })}>
                 <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" disabled={l.status === 'pago'} checked={sel.has(l.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(l.id) : n.delete(l.id); setSel(n); }} /></td>
                 <td>{diaMes(l.vencimento)}</td><td>{l.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}</td>
                 <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(grupos, l.grupo_id)}</td><td>{nome(subgrupos, l.subgrupo_id) || '·'}</td>
@@ -117,6 +133,13 @@ export default function Lancamentos() {
               <label>Valor (R$)<input type="number" step="0.01" min="0.01" required value={form.valor ?? ''} onChange={e => setForm({ ...form, valor: e.target.value as unknown as number })} /></label>
               <label>Grupo<select required value={form.grupo_id ?? ''} onChange={e => setForm({ ...form, grupo_id: Number(e.target.value), subgrupo_id: null })}><option value="" disabled>Selecione</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
               <label>Subgrupo<select value={form.subgrupo_id ?? ''} onChange={e => setForm({ ...form, subgrupo_id: e.target.value ? Number(e.target.value) : null })}><option value="">·</option>{subsDoGrupo.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
+              <label className="full">Beneficiário cadastrado{exigeBenef ? ' *' : ' (opcional até 31/12/2026)'}
+                <span style={{ display: 'flex', gap: 6 }}>
+                  <input list="lista-benef" style={{ flex: 1 }} placeholder="Digite o nome ou CPF/CNPJ" value={buscaBenef} onChange={e => escolherBenef(e.target.value)} required={exigeBenef} />
+                  <button type="button" className="btn ghost" onClick={() => setNovoBenef(true)}>+ Novo</button>
+                </span>
+                <datalist id="lista-benef">{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotulo(b)} />)}</datalist>
+              </label>
               <label className="full">Favorecido / Pagador<input required value={form.favorecido} onChange={e => setForm({ ...form, favorecido: e.target.value })} /></label>
               <label>Referência<input placeholder="Parcela ou competência" value={form.referencia ?? ''} onChange={e => setForm({ ...form, referencia: e.target.value })} /></label>
               <label>Documento<input value={form.documento ?? ''} onChange={e => setForm({ ...form, documento: e.target.value })} /></label>
@@ -133,6 +156,12 @@ export default function Lancamentos() {
             </form>
           </div>
         </div>
+      )}
+
+      {novoBenef && form && (
+        <FormBeneficiario inicial={{ ativo: true, nome: form.favorecido, grupo_id: form.grupo_id ?? null }} grupos={grupos} subgrupos={subgrupos}
+          aoFechar={() => setNovoBenef(false)}
+          aoSalvar={b => { setNovoBenef(false); recarregar(); setBuscaBenef(rotulo(b)); setForm({ ...form, beneficiario_id: b.id, favorecido: b.nome }); }} />
       )}
 
       {baixa && (

@@ -5,11 +5,13 @@ import { brl, dataBR, diaMes, hojeISO, somaDias, statusEfetivo, classeStatus, ST
 import { useCadastros } from '../lib/useCadastros';
 import { sincronizarFatura } from '../lib/faturas';
 import { Cabecalho } from '../components/Layout';
+import { formatarDocumento } from '../lib/documento';
 
 const SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
 export default function Pagar() {
-  const { contas, grupos, subgrupos } = useCadastros();
+  const { contas, grupos, subgrupos, beneficiarios } = useCadastros();
+  const [copiado, setCopiado] = useState(false);
   const hoje = hojeISO();
   const [lista, setLista] = useState<Lancamento[]>([]);
   const [f, setF] = useState({ per: 'mes', conta: '', grupo: '', status: '' });
@@ -60,7 +62,7 @@ export default function Pagar() {
     }
     if (juros > 0) {
       const g = grupos.find(x => x.nome === 'Juros Bancários');
-      await supabase.from('lancamentos').insert({ tipo: 'saida', conta_id, vencimento: baixa.data, data_pagamento: baixa.data, grupo_id: g!.id, favorecido: l.favorecido, referencia: 'Juros/multa: ' + (l.referencia || dataBR(l.vencimento)), valor: juros, status: 'pago' });
+      await supabase.from('lancamentos').insert({ tipo: 'saida', conta_id, vencimento: baixa.data, data_pagamento: baixa.data, grupo_id: g!.id, favorecido: l.favorecido, beneficiario_id: l.beneficiario_id, referencia: 'Juros/multa: ' + (l.referencia || dataBR(l.vencimento)), valor: juros, status: 'pago' });
     }
     setBaixa(null); setVersao(v => v + 1);
   }
@@ -106,6 +108,13 @@ export default function Pagar() {
         <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setBaixa(null)}>
           <div className="modal"><h2>Baixar pagamento</h2>
             <p style={{ margin: '-6px 0 14px', color: 'var(--muted)' }}>{baixa.l.favorecido} · vencimento {dataBR(baixa.l.vencimento)} · {brl(baixa.l.valor)}</p>
+            {(() => { const b = beneficiarios.find(x => x.id === baixa.l.beneficiario_id); return b && (
+              <div style={{ background: 'var(--ivory)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 13 }}>
+                <b>{b.nome}</b> · {formatarDocumento(b.documento)}
+                {b.pix_chave && <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>PIX: <code>{b.pix_chave}</code>
+                  <button type="button" className="btn ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => { navigator.clipboard?.writeText(b.pix_chave!).then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 1500); }).catch(() => {}); }}>{copiado ? 'Copiado' : 'Copiar'}</button></div>}
+                {(b.banco || b.agencia || b.conta) && <div style={{ marginTop: 4, color: 'var(--muted)' }}>Banco {b.banco || '·'} · Ag. {b.agencia || '·'} · Conta {b.conta || '·'}</div>}
+              </div>); })()}
             <form className="form" onSubmit={confirmar}>
               <label>Data do pagamento<input type="date" required value={baixa.data} onChange={e => setBaixa({ ...baixa, data: e.target.value })} /></label>
               <label>Conta<select required value={baixa.conta} onChange={e => setBaixa({ ...baixa, conta: e.target.value })}><option value="" disabled>Selecione</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>

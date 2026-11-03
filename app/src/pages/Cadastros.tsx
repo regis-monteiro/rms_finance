@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useCadastros } from '../lib/useCadastros';
 import { Cabecalho } from '../components/Layout';
+import { AbaBeneficiarios } from '../components/Beneficiarios';
+import { useAuth } from '../lib/auth';
 
 const TIPO = { corrente: 'Conta corrente', aplicacao: 'Aplicação', especie: 'Espécie' };
 
 export default function Cadastros() {
-  const { contas, cartoes, grupos, subgrupos, recarregar } = useCadastros();
-  const [aba, setAba] = useState<'contas' | 'cartoes' | 'grupos'>('contas');
+  const { contas, cartoes, grupos, subgrupos, beneficiarios, recarregar } = useCadastros();
+  const diretor = useAuth().usuario?.perfil === 'diretor';
+  const [aba, setAba] = useState<'beneficiarios' | 'contas' | 'cartoes' | 'grupos'>('beneficiarios');
   const [msg, setMsg] = useState('');
   const [novoSub, setNovoSub] = useState<{ grupo: string; nome: string }>({ grupo: '', nome: '' });
 
@@ -26,11 +29,13 @@ export default function Cadastros() {
 
   return (
     <>
-      <Cabecalho titulo="Cadastros" sub="Contas, cartões e plano de contas">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}</Cabecalho>
+      <Cabecalho titulo="Cadastros" sub="Beneficiários, contas, cartões e plano de contas">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}</Cabecalho>
       <div className="card">
         <div className="tabs">
-          {([['contas', 'Contas'], ['cartoes', 'Cartões'], ['grupos', 'Plano de contas']] as const).map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} onClick={() => setAba(k)}>{t}</button>)}
+          {([['beneficiarios', 'Fornecedores / beneficiários'], ...(diretor ? [['contas', 'Contas'], ['cartoes', 'Cartões'], ['grupos', 'Plano de contas']] : [])] as [typeof aba, string][]).map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} onClick={() => setAba(k)}>{t}</button>)}
         </div>
+
+        {aba === 'beneficiarios' && <AbaBeneficiarios beneficiarios={beneficiarios} grupos={grupos} subgrupos={subgrupos} recarregar={recarregar} />}
 
         {aba === 'contas' && (
           <table><thead><tr><th>Conta</th><th>Tipo</th><th className="r">Saldo inicial</th><th>Data do saldo inicial</th><th>Ativa</th></tr></thead>

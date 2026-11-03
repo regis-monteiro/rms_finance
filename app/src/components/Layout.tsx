@@ -21,8 +21,8 @@ export default function Layout() {
           <div className="sep">Análises</div>
           {item('/dre', 'DRE / Análise do fluxo')}
           {item('/comparativos', 'Comparativos')}
-          {p === 'diretor' && <div className="sep">Configurações</div>}
-          {item('/cadastros', 'Cadastros', p === 'diretor')}
+          {opera && <div className="sep">Configurações</div>}
+          {item('/cadastros', 'Cadastros', opera)}
           {item('/usuarios', 'Usuários', p === 'diretor')}
           {item('/importacao', 'Importação', p === 'diretor')}
         </nav>

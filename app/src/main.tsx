@@ -31,7 +31,7 @@ function App() {
         <Route path="cartoes" element={so(opera, <Cartoes />)} />
         <Route path="dre" element={<EmBreve titulo="DRE / Análise do fluxo" />} />
         <Route path="comparativos" element={<EmBreve titulo="Comparativos" />} />
-        <Route path="cadastros" element={so(dir, <Cadastros />)} />
+        <Route path="cadastros" element={so(opera, <Cadastros />)} />
         <Route path="usuarios" element={so(dir, <EmBreve titulo="Usuários" />)} />
         <Route path="importacao" element={so(dir, <EmBreve titulo="Importação" />)} />
         <Route path="*" element={<Navigate to="/" replace />} />

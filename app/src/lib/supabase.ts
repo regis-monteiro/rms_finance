@@ -17,4 +17,11 @@ export interface Lancamento {
   id: number; tipo: 'entrada' | 'saida'; conta_id: number | null; vencimento: string; data_pagamento: string | null;
   grupo_id: number; subgrupo_id: number | null; favorecido: string; referencia: string | null; documento: string | null;
   valor: number; status: Status; forma_pagamento: string | null; fatura_id: number | null; observacao: string | null;
+  beneficiario_id: number | null;
+}
+export interface Beneficiario {
+  id: number; nome: string; documento: string; nome_fantasia: string | null; email: string | null; telefone: string | null;
+  cep: string | null; logradouro: string | null; numero: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null;
+  banco: string | null; agencia: string | null; conta: string | null; pix_tipo: string | null; pix_chave: string | null;
+  grupo_id: number | null; subgrupo_id: number | null; observacao: string | null; ativo: boolean;
 }
