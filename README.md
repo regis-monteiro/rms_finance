@@ -11,11 +11,20 @@ Aplicativo de controle financeiro interno da RMS Organização Contábil.
 - Comparativos com meses e anos anteriores
 - Importação dos dados da planilha Excel usada hoje
 
-## Usuários
+## Perfis de acesso
 
-- Diretores e colaboradores
-- Níveis de acesso e visualizações diferentes por perfil
+| Perfil | Permissões |
+|---|---|
+| Diretor | Vê e edita tudo, gerencia usuários |
+| Financeiro | Lança e baixa contas a pagar e a receber |
+| Consulta | Visualiza apenas os relatórios liberados |
+
+## Arquitetura
+
+- Acesso pela internet, via navegador, com login
+- Banco de dados e autenticação: Supabase
+- Hospedagem do site: Vercel
 
 ## Status
 
-Em planejamento. A estrutura técnica será definida após a análise da planilha atual.
+Em planejamento. A estrutura de dados será definida após a análise da planilha atual.
