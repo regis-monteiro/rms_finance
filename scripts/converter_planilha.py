@@ -45,7 +45,7 @@ for r in range(5, min(ws.max_row, 20000) + 1):
     if not grupo:
         grupo = 'Administrativas'; obs.append('grupo não informado na planilha'); pend['sem grupo'] += 1
     if grupo == 'Estimativa':
-        grupo = 'Não previstas'; status = 'previsto'; obs.append('estimativa da planilha'); pend['estimativa'] += 1
+        grupo = 'Não previstas'; obs.append('estimativa da planilha'); pend['estimativa'] += 1
     venc = data_valida(ANO, mes, int(dia) if dia else 1)
     sub = texto(sub)
     if sub in CARTAO:
