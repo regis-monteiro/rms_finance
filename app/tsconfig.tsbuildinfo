@@ -1,0 +1,1 @@
+{"root":["./src/main.tsx","./src/components/Layout.tsx","./src/lib/auth.tsx","./src/lib/format.ts","./src/lib/supabase.ts","./src/lib/useCadastros.ts","./src/pages/Cadastros.tsx","./src/pages/Dashboard.tsx","./src/pages/EmBreve.tsx","./src/pages/Lancamentos.tsx","./src/pages/Login.tsx"],"version":"5.9.3"}

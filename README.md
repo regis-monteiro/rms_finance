@@ -25,6 +25,18 @@ Aplicativo de controle financeiro interno da RMS Organização Contábil.
 - Banco de dados e autenticação: Supabase
 - Hospedagem do site: Vercel
 
+## Estrutura do repositório
+
+| Pasta | Conteúdo |
+|---|---|
+| `app/` | Aplicativo (React + Vite + Supabase) |
+| `supabase/` | Scripts SQL do banco de dados |
+| `docs/` | Especificação funcional e guia de configuração |
+| `prototipo/` | Protótipo navegável aprovado |
+
 ## Status
 
-Em planejamento. A estrutura de dados será definida após a análise da planilha atual.
+- Versão 0.1: login, perfis, dashboard (saldos, contas a pagar, faturas), lançamentos e cadastros.
+- Próximas telas: contas a pagar, contas a receber, cartões, DRE, comparativos, usuários e importação.
+
+Configuração: ver `docs/configuracao.md`.
