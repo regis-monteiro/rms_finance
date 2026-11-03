@@ -16,6 +16,7 @@ import Usuarios from './pages/Usuarios';
 import Receber from './pages/Receber';
 import DRE from './pages/DRE';
 import Comparativos from './pages/Comparativos';
+import Importacao from './pages/Importacao';
 
 function App() {
   const { session, usuario, carregando } = useAuth();
@@ -37,7 +38,7 @@ function App() {
         <Route path="comparativos" element={<Comparativos />} />
         <Route path="cadastros" element={so(opera, <Cadastros />)} />
         <Route path="usuarios" element={so(dir, <Usuarios />)} />
-        <Route path="importacao" element={so(dir, <EmBreve titulo="Importação" />)} />
+        <Route path="importacao" element={so(dir, <Importacao />)} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
