@@ -12,6 +12,8 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 - Subgrupos que começam com "CC " indicam cartão. Outros subgrupos com "CC" no nome (ex.: "CCM") são subgrupos comuns.
 - Compras de cartão sem grupo entram em Administrativas, com observação.
 - Planilhas protegidas por senha são abertas só para a importação; a senha não é gravada.
+- Formatos aceitos: .xlsx, .xlsm e .xlsb. A linha de cabeçalho é localizada pelo nome das colunas (em 2023 fica na linha 2).
+- Nomes de grupos são comparados sem diferença de maiúsculas e minúsculas (ex.: "Distribuição de Lucros" = "Distribuição de lucros").
 
 ## Mapeamentos
 
@@ -25,7 +27,13 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 | Banco "RMS Bradesco" | Conta Bradesco | 2024 |
 | Banco "Bradesco" (só em 2024) | Conta nova "Bradesco (antiga)", corrente, inativa | 2024 |
 | Banco "CEF" | Conta nova "CEF", corrente, inativa | 2024 |
-| Banco "Poupança" | Conta nova "Poupança CEF", aplicação, inativa | 2024 |
+| Banco "Poupança" | Conta nova "Poupança CEF", aplicação, inativa | 2023 e 2024 |
+| Banco "Reginaldo" | Não importar (movimentação pessoal) | 2023 |
+| Banco "Bloqueio Judicial" | Não importar, inclusive o saldo inicial | 2023 |
+| Banco "Cheques" | Não importar (sem movimento) | 2023 |
+| Subgrupo "CC Bradesco" | Cartão PJ Bradesco | 2023 |
+| Grupo "Osasco" | Grupo Não previstas | 2023 |
+| Grupo "QuickFy" | Grupo Informática | 2023 |
 
 ## Conferência por ano
 
@@ -33,6 +41,7 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 |---|---|---|---|---|---|
 | 2025 | 3.387 | 708 | R$ 330.655,34 | R$ 330.644,57 | Bradesco: R$ 10,77 a mais em 31/12/2025 do que em 01/01/2026 |
 | 2024 | 3.484 | 735 | R$ 153.513,63 | R$ 153.513,62 | Bradesco: R$ 0,01 (arredondamento) |
+| 2023 | 3.555 | 481 | R$ 68.295,79 | R$ 63.609,40 | R$ 4.686,39 da conta Bloqueio Judicial, que não passa para 2024 |
 
 ## Decisões registradas
 
@@ -42,3 +51,4 @@ Registro das diferenças encontradas em cada planilha e das decisões tomadas. A
 - 03/11/2026: "CC Inter" é o cartão PJ Inter.
 - 03/11/2026: em 2024, "RMS Bradesco" é a conta Bradesco atual; "Bradesco" é uma conta antiga, inativa.
 - 03/11/2026: "CEF" e "Poupança" viram duas contas antigas, inativas.
+- 03/11/2026: em 2023, contas "Reginaldo" e "Bloqueio Judicial" não são importadas; "Osasco" vai para Não previstas; "CC Bradesco" é o cartão PJ Bradesco.
