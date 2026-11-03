@@ -10,6 +10,8 @@ import Dashboard from './pages/Dashboard';
 import Lancamentos from './pages/Lancamentos';
 import Cadastros from './pages/Cadastros';
 import EmBreve from './pages/EmBreve';
+import Pagar from './pages/Pagar';
+import Cartoes from './pages/Cartoes';
 
 function App() {
   const { session, usuario, carregando } = useAuth();
@@ -24,9 +26,9 @@ function App() {
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="lancamentos" element={so(opera, <Lancamentos />)} />
-        <Route path="pagar" element={so(opera, <EmBreve titulo="Contas a pagar" />)} />
+        <Route path="pagar" element={so(opera, <Pagar />)} />
         <Route path="receber" element={<EmBreve titulo="Contas a receber" />} />
-        <Route path="cartoes" element={so(opera, <EmBreve titulo="Cartões" />)} />
+        <Route path="cartoes" element={so(opera, <Cartoes />)} />
         <Route path="dre" element={<EmBreve titulo="DRE / Análise do fluxo" />} />
         <Route path="comparativos" element={<EmBreve titulo="Comparativos" />} />
         <Route path="cadastros" element={so(dir, <Cadastros />)} />
