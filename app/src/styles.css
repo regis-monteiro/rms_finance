@@ -150,3 +150,4 @@ a{color:var(--navy)}
 .card.clicavel:hover{box-shadow:0 0 0 2px var(--gold-soft)}
 tr.clicavel:hover td{background:#FBF9F3}
 .caixa input{font-size:12.5px;padding:4px 6px}
+.lote-contas input,.lote-contas select{font-size:12.5px;padding:4px 6px}

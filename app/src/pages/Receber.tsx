@@ -9,6 +9,7 @@ import { GraficoBarras, MESES_CURTOS } from '../lib/graficos';
 import { Cabecalho } from '../components/Layout';
 import { AbaEmAberto, ModalLancarRecebimentos } from '../components/Recebimentos';
 import { ImportarBoletos } from '../components/ImportarBoletos';
+import { ModalLancarContas } from '../components/LancarContas';
 import { usePersistente } from '../lib/rascunho';
 
 interface Rec { grupo_id: number; mes: number; recebido: number; a_receber: number }
@@ -22,6 +23,7 @@ export default function Receber() {
   const [aba, setAba] = usePersistente<'resumo' | 'aberto'>('rec:aba', 'resumo');
   const [lancar, setLancar] = usePersistente('rec:lancar', false);
   const [importar, setImportar] = useState(false);
+  const [lote, setLote] = usePersistente('rec:lote-contas', false);
   const anos = useAnos();
   const hoje = new Date();
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -70,6 +72,7 @@ export default function Receber() {
   return (
     <>
       <Cabecalho titulo="Contas a receber" sub="Previsto x recebido por grupo e contas a receber de cada cliente">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}
+        {edita && <button className="btn ghost" onClick={() => setLote(true)}>+ Novas contas a receber</button>}
         {edita && <button className="btn ghost" onClick={() => setImportar(true)}>Importar boletos</button>}
         {edita && <button className="btn gold" onClick={() => setLancar(true)}>Lançar recebimentos</button>}</Cabecalho>
       <div className="tabs">
@@ -82,7 +85,7 @@ export default function Receber() {
         <span style={{ flex: 1 }} />
         {edita && aba === 'resumo' && <button className="btn ghost" onClick={() => setGerar({ base: recAnt.length ? 'anterior' : 'media', reajuste: '0' })}>Gerar previsão do ano</button>}
       </div>
-      {aba === 'aberto' && edita ? <AbaEmAberto cad={cad} ano={ano} mes={mes} aoMudar={() => setVersao(v => v + 1)} /> : <>
+      {aba === 'aberto' && edita ? <AbaEmAberto key={versao} cad={cad} ano={ano} mes={mes} aoMudar={() => setVersao(v => v + 1)} /> : <>
       <div className="grid g4">
         <div className="card kpi"><div className="lbl">Previsto no mês</div><div className="val">{brl(tp)}</div></div>
         <div className="card kpi"><div className="lbl">Recebido</div><div className="val pos">{brl(tr)}</div></div>
@@ -106,6 +109,7 @@ export default function Receber() {
       </div>
 
       </>}
+      {lote && <ModalLancarContas tipo="entrada" cad={cad} aoFechar={() => setLote(false)} aoSalvar={m => { setLote(false); setMsg(m); setTimeout(() => setMsg(''), 6000); setAba('aberto'); setVersao(v => v + 1); }} />}
       {importar && <ImportarBoletos cad={cad} aoFechar={() => setImportar(false)} aoConcluir={m => { setImportar(false); setMsg(m); setTimeout(() => setMsg(''), 8000); setAba('aberto'); setVersao(v => v + 1); }} />}
       {lancar && <ModalLancarRecebimentos cad={cad} aoFechar={() => setLancar(false)} aoSalvar={m => { setLancar(false); setMsg(m); setTimeout(() => setMsg(''), 6000); setVersao(v => v + 1); }} />}
       {gerar && (

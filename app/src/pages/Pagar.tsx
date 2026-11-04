@@ -10,11 +10,14 @@ import { Cabecalho } from '../components/Layout';
 import { formatarDocumento } from '../lib/documento';
 import { usePersistente } from '../lib/rascunho';
 import { registrarPagamento } from '../lib/titulos';
+import { ModalLancarContas } from '../components/LancarContas';
 
 const SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
 export default function Pagar() {
-  const { contas, grupos, subgrupos, beneficiarios } = useCadastros();
+  const { contas, grupos, subgrupos, beneficiarios, centros } = useCadastros();
+  const [lote, setLote] = usePersistente('pagar:lote', false);
+  const [aviso, setAviso] = useState('');
   const [copiado, setCopiado] = useState(false);
   const hoje = hojeISO();
   const [lista, setLista] = useState<Lancamento[]>([]);
@@ -70,7 +73,8 @@ export default function Pagar() {
 
   return (
     <>
-      <Cabecalho titulo="Contas a pagar" sub="Saídas em aberto, uma a uma, incluindo saldos de faturas de cartão" />
+      <Cabecalho titulo="Contas a pagar" sub="Saídas em aberto, uma a uma, incluindo saldos de faturas de cartão">{aviso && <span className="ok">{aviso}</span>}<button className="btn gold" onClick={() => setLote(true)}>+ Novas contas a pagar</button></Cabecalho>
+      {lote && <ModalLancarContas tipo="saida" cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLote(false)} aoSalvar={m => { setLote(false); setAviso(m); setTimeout(() => setAviso(''), 6000); setVersao(v => v + 1); }} />}
       <div className="grid g4">
         <div className="card kpi"><div className="lbl">Vencidas</div><div className="val neg">{brl(soma(vencidas))}</div><div className="sub">{vencidas.length} itens</div></div>
         <div className="card kpi"><div className="lbl">Vencem hoje</div><div className="val">{brl(soma(hojeL))}</div><div className="sub">{hojeL.length} itens</div></div>
