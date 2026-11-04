@@ -140,12 +140,34 @@ export default function Conciliacao() {
     return palavras(descricaoOFX(t)).some(w => app.has(w));
   }
 
+  const rejeitado = (p: Par) => !!p.l && (((p.l.ofx_anterior as { rejeitados?: string[] } | null)?.rejeitados) || []).includes(p.t.fitid);
+
+  /** Desfaz a conciliação: tira o vínculo e devolve o lançamento ao estado anterior (ou exclui o que foi criado do extrato) */
+  async function desfazerConciliacao(l: Lancamento) {
+    setErro(''); setMsg('');
+    const ant = (l.ofx_anterior || {}) as { modo?: string; status?: string; data_pagamento?: string | null; conta_id?: number | null };
+    let r;
+    // A linha do extrato desfeita fica registrada, para não ser associada de novo automaticamente
+    const rejeitados = [...new Set([...(((l.ofx_anterior as { rejeitados?: string[] } | null)?.rejeitados) || []), l.ofx_fitid].filter(Boolean))];
+    if (ant.modo === 'criado') r = await supabase.from('lancamentos').delete().eq('id', l.id);
+    else r = await supabase.from('lancamentos').update({
+      ofx_fitid: null, ofx_anterior: { rejeitados }, atualizado_em: new Date().toISOString(),
+      ...(ant.modo === 'manual' && ant.data_pagamento ? { data_pagamento: ant.data_pagamento } : {}),
+      ...(ant.modo === 'baixa' ? { status: ant.status || 'confirmado', data_pagamento: ant.data_pagamento ?? null, conta_id: ant.conta_id ?? null } : {}),
+    }).eq('id', l.id);
+    if (r.error) { setErro(r.error.message); return; }
+    setMsg(ant.modo === 'criado' ? 'Conciliação desfeita: o lançamento criado a partir do extrato foi excluído.' : ant.modo === 'baixa' ? 'Conciliação desfeita: a previsão voltou a ficar em aberto.' : 'Conciliação desfeita.');
+    setVersao(v => v + 1);
+  }
+  const textoDesfazer = (l: Lancamento) => { const m = (l.ofx_anterior as { modo?: string } | null)?.modo; return m === 'criado' ? 'Desfazer (exclui o lançamento criado)' : m === 'baixa' ? 'Desfazer (volta a previsão)' : 'Desfazer conciliação'; };
+  const rotuloModo = (l: Lancamento) => ({ auto: 'automática', manual: 'manual', baixa: 'com baixa da previsão', criado: 'lançamento criado do extrato' } as Record<string, string>)[(l.ofx_anterior as { modo?: string } | null)?.modo || ''] || '';
+
   /** Itens com mesmo valor, mesma data e mesmo nome de um lançamento já pago: conciliados sem pedir confirmação */
   async function conciliarExatos(lista: Par[]) {
-    const exatos = lista.filter(p => p.sit === 'pago' && p.l!.data_pagamento === p.t.data && nomeConfere(p.t, p.l!));
+    const exatos = lista.filter(p => p.sit === 'pago' && p.l!.data_pagamento === p.t.data && nomeConfere(p.t, p.l!) && !rejeitado(p));
     let n = 0;
     for (const p of exatos) {
-      const r = await supabase.from('lancamentos').update({ ofx_fitid: p.t.fitid, atualizado_em: new Date().toISOString() }).eq('id', p.l!.id);
+      const r = await supabase.from('lancamentos').update({ ofx_fitid: p.t.fitid, ofx_anterior: { modo: 'auto' }, atualizado_em: new Date().toISOString() }).eq('id', p.l!.id);
       if (!r.error) n++;
     }
     if (n) { setMsg(`${n} item(ns) com mesmo valor, data e nome conciliado(s) automaticamente. Os demais aguardam sua confirmação.`); setVersao(v => v + 1); return true; }
@@ -192,7 +214,7 @@ export default function Conciliacao() {
   /** Decisão de cada linha: a gravada no rascunho ou a sugerida */
   const decisao = (p: Par): Dec => {
     const d = dec[p.t.fitid]; if (d) return d;
-    if (p.sit !== 'novo') return { marcado: (p.sit === 'pago' || p.sit === 'aberto') && !!p.l && nomeConfere(p.t, p.l), grupo: '', sub: '', centro: '', benef: '', fav: '', ajustarData: true };
+    if (p.sit !== 'novo') return { marcado: (p.sit === 'pago' || p.sit === 'aberto') && !!p.l && nomeConfere(p.t, p.l) && !rejeitado(p), grupo: '', sub: '', centro: '', benef: '', fav: '', ajustarData: true };
     const s = sugestoes.get(p.t.fitid), o = s?.opcoes.find(x => !ESPECIAIS.includes(grupos.find(g => g.id === x.grupo_id)?.nome || ''));
     const b = s?.beneficiario_id ? beneficiarios.find(x => x.id === s.beneficiario_id) : undefined;
     return { marcado: false, grupo: o ? String(o.grupo_id) : '', sub: o?.subgrupo_id ? String(o.subgrupo_id) : '', centro: o?.centro_custo_id ? String(o.centro_custo_id) : '', benef: b ? String(b.id) : '', fav: b?.nome || p.t.nome || p.t.memo, ajustarData: true };
@@ -225,10 +247,10 @@ export default function Conciliacao() {
       let r;
       if (p.sit === 'pago') {
         const muda = d.ajustarData && p.l!.data_pagamento !== p.t.data;
-        r = await supabase.from('lancamentos').update({ ofx_fitid: p.t.fitid, ...(muda ? { data_pagamento: p.t.data } : {}), atualizado_em: new Date().toISOString() }).eq('id', p.l!.id);
+        r = await supabase.from('lancamentos').update({ ofx_fitid: p.t.fitid, ofx_anterior: { modo: 'manual', data_pagamento: p.l!.data_pagamento }, ...(muda ? { data_pagamento: p.t.data } : {}), atualizado_em: new Date().toISOString() }).eq('id', p.l!.id);
         if (!r.error) nC++;
       } else if (p.sit === 'aberto') {
-        r = await supabase.from('lancamentos').update({ status: 'pago', data_pagamento: p.t.data, conta_id: Number(conta), ofx_fitid: p.t.fitid, atualizado_em: new Date().toISOString() }).eq('id', p.l!.id);
+        r = await supabase.from('lancamentos').update({ status: 'pago', data_pagamento: p.t.data, conta_id: Number(conta), ofx_fitid: p.t.fitid, ofx_anterior: { modo: 'baixa', status: p.l!.status, data_pagamento: p.l!.data_pagamento, conta_id: p.l!.conta_id }, atualizado_em: new Date().toISOString() }).eq('id', p.l!.id);
         if (!r.error) nB++;
       } else {
         const b = beneficiarios.find(x => x.id === Number(d.benef));
@@ -236,7 +258,7 @@ export default function Conciliacao() {
           tipo: p.t.tipo, conta_id: Number(conta), vencimento: p.t.data, data_pagamento: p.t.data, grupo_id: Number(d.grupo), subgrupo_id: d.sub ? Number(d.sub) : null,
           centro_custo_id: d.centro ? Number(d.centro) : null, beneficiario_id: b?.id ?? null, favorecido: b?.nome || d.fav || p.t.nome || p.t.memo,
           documento: p.t.documento || null, valor: p.t.valor, status: 'pago', forma_pagamento: /pix/i.test(descricaoOFX(p.t)) ? 'PIX' : null,
-          observacao: 'extrato OFX: ' + descricaoOFX(p.t).slice(0, 180), ofx_fitid: p.t.fitid,
+          observacao: 'extrato OFX: ' + descricaoOFX(p.t).slice(0, 180), ofx_fitid: p.t.fitid, ofx_anterior: { modo: 'criado' },
         });
         if (!r.error) nN++;
       }
@@ -319,9 +341,12 @@ export default function Conciliacao() {
                       {p.a && <div>{p.a.fitids.length > 1 && <span style={{ color: 'var(--muted)' }}>Grupo de {p.a.fitids.length} linhas do extrato · </span>}
                         {p.a.lancs.map(l => <div key={l.id}>{l.favorecido} · {nomeG(l.grupo_id)}{l.subgrupo_id ? ' · ' + nomeS(l.subgrupo_id) : ''} · <span className={l.tipo === 'entrada' ? 'pos' : ''}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}</span></div>)}
                         <button className="btn ghost mini" style={{ marginTop: 3 }} onClick={() => desassociar(p.a!)}>Desfazer associação</button></div>}
+                      {(p.sit === 'pago' || p.sit === 'aberto') && rejeitado(p) && <div style={{ fontSize: 12, color: '#8A6A12', fontWeight: 600 }}>Esta associação foi desfeita antes: confirme só se estiver correta</div>}
                       {p.l && (p.sit === 'pago' || p.sit === 'aberto') && !nomeConfere(p.t, p.l) && <div style={{ fontSize: 12, color: '#8A6A12', fontWeight: 600 }}>Nome diferente do extrato: confira antes de marcar</div>}
                       {p.l && <div>{p.l.favorecido} · {nomeG(p.l.grupo_id)}{p.l.subgrupo_id ? ' · ' + nomeS(p.l.subgrupo_id) : ''}
                         <span style={{ color: 'var(--muted)' }}> · {p.sit === 'aberto' ? `vence ${dataBR(p.l.vencimento)}; será baixado em ${dataBR(p.t.data)}` : `pago em ${dataBR(p.l.data_pagamento)}`}</span>
+                        {p.sit === 'conciliado' && <div style={{ marginTop: 3 }}>{rotuloModo(p.l) && <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 6 }}>Conciliação {rotuloModo(p.l)}</span>}
+                          <button className="btn ghost mini" onClick={() => desfazerConciliacao(p.l!)}>{textoDesfazer(p.l)}</button></div>}
                         {p.sit === 'pago' && p.l.data_pagamento !== p.t.data && <label style={{ display: 'block', fontSize: 12, color: '#8A6A12' }}><input type="checkbox" checked={d.ajustarData} onChange={e => mudar(p, 'ajustarData', e.target.checked)} /> Ajustar a data de pagamento para {dataBR(p.t.data)}</label>}</div>}
                       {p.sit === 'novo' && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
