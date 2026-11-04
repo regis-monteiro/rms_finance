@@ -129,7 +129,7 @@ export default function DRE() {
         </table>
         <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Valores em R$. Realizado pela data de pagamento; previsto pelo vencimento. Compras de cartão entram no mês de vencimento da fatura{conta ? ', na proporção paga por esta conta' : ''}. Clique numa linha para ver os grupos.{centro ? ` Centro de custo: ${nomeCentro(centros, centro)}${centros.find(c => c.id === centro)?.nome === 'Geral' ? ' (inclui os subcentros e o que está sem centro)' : ''}.` : ''}</p>
       </div>
-      {emitir && <ModalEmissao titulo={`DRE ${ano}`} assinatura aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio}
+      {emitir && <ModalEmissao titulo={`DRE ${ano}`} assinatura semAssinaturaPadrao={modo !== 'real'} avisoSemAssinatura={modo !== 'real' ? 'Este DRE inclui valores previstos, por isso a emissão sem assinatura vem selecionada.' : undefined} aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio}
         extras={<label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginBottom: 8 }}><input type="checkbox" checked={comGrupos} onChange={e => setComGrupos(e.target.checked)} /> Incluir o detalhamento por grupo</label>} />}
     </>
   );

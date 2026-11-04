@@ -1,18 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSignatarios, identificacao, type Signatario } from './Signatarios';
 
 /** Janela de emissão: escolhe o formato e, quando permitido, os signatários. */
-export function ModalEmissao({ titulo, assinatura, extras, aoFechar, aoGerar }: {
-  titulo: string; assinatura?: boolean; extras?: React.ReactNode; aoFechar: () => void;
+export function ModalEmissao({ titulo, assinatura, semAssinaturaPadrao, avisoSemAssinatura, extras, aoFechar, aoGerar }: {
+  titulo: string; assinatura?: boolean; semAssinaturaPadrao?: boolean; avisoSemAssinatura?: string; extras?: React.ReactNode; aoFechar: () => void;
   aoGerar: (formato: 'pdf' | 'xlsx', assinaturas: Signatario[]) => Promise<void>;
 }) {
   const sigs = useSignatarios().filter(s => s.ativo);
   const [sel, setSel] = useState<Set<number>>(new Set());
+  const [assinar, setAssinar] = useState(!semAssinaturaPadrao);
+  // Com assinatura: já vêm marcados todos os signatários ativos
+  useEffect(() => { if (sigs.length && !sel.size) setSel(new Set(sigs.map(s => s.id))); }, [sigs.length]);
   const [gerando, setGerando] = useState<'' | 'pdf' | 'xlsx'>('');
   const [erro, setErro] = useState('');
   async function gerar(f: 'pdf' | 'xlsx') {
     setErro(''); setGerando(f);
-    try { await aoGerar(f, sigs.filter(s => sel.has(s.id))); aoFechar(); } catch (e) { setErro((e as Error).message); }
+    try { await aoGerar(f, assinatura && assinar ? sigs.filter(s => sel.has(s.id)) : []); aoFechar(); } catch (e) { setErro((e as Error).message); }
     setGerando('');
   }
   return (
@@ -22,13 +25,18 @@ export function ModalEmissao({ titulo, assinatura, extras, aoFechar, aoGerar }: 
         {assinatura && (
           <div style={{ margin: '6px 0 14px' }}>
             <div style={{ fontWeight: 600, color: 'var(--navy)', marginBottom: 6 }}>Assinatura</div>
-            {sigs.length === 0 ? <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: 0 }}>Nenhum signatário cadastrado. Cadastre em Cadastros → Signatários.</p>
+            <div style={{ display: 'flex', gap: 18, fontSize: 13, marginBottom: 8 }}>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="radio" checked={assinar} onChange={() => setAssinar(true)} /> Com assinatura</label>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="radio" checked={!assinar} onChange={() => setAssinar(false)} /> Sem assinatura</label>
+            </div>
+            {avisoSemAssinatura && <p className="proto" style={{ margin: '0 0 8px' }}>{avisoSemAssinatura}</p>}
+            {!assinar ? <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: 0 }}>O relatório sai sem o bloco de assinatura.</p> : sigs.length === 0 ? <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: 0 }}>Nenhum signatário cadastrado. Cadastre em Cadastros → Signatários.</p>
               : sigs.map(s => (
                 <label key={s.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '4px 0' }}>
                   <input type="checkbox" checked={sel.has(s.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(s.id) : n.delete(s.id); setSel(n); }} />
                   <b>{s.nome}</b> <span style={{ color: 'var(--muted)' }}>{identificacao(s)}</span>
                 </label>))}
-            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '6px 0 0' }}>O PDF sai com o bloco de assinatura dos selecionados, pronto para assinar no gov.br ou com certificado ICP-Brasil.</p>
+            {assinar && <p style={{ fontSize: 12, color: 'var(--muted)', margin: '6px 0 0' }}>O PDF sai com o bloco de assinatura dos selecionados, pronto para assinar no gov.br ou com certificado ICP-Brasil.</p>}
           </div>
         )}
         {erro && <div className="err">{erro}</div>}
