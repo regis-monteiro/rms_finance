@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import DataBR from '../components/DataBR';
 import { Cabecalho } from '../components/Layout';
 import { supabase, type Lancamento } from '../lib/supabase';
-import { brl, dataBR, somaDias } from '../lib/format';
+import { brl, dataBR, hojeISO, somaDias } from '../lib/format';
 import { useCadastros, OpcoesCentro, nomeCentro, centroPadrao } from '../lib/useCadastros';
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
-import { decodificar, descricaoOFX, lerOFX, type ExtratoOFX, type TransacaoOFX } from '../lib/ofx';
+import { buscarExtratoBanco, decodificar, descricaoOFX, lerOFX, type ExtratoOFX, type TransacaoOFX } from '../lib/ofx';
 import { carregarDicionario, divergente, invalidarDicionario, sugerir, type Sugestao } from '../lib/sugestao';
 import { formatarDocumento } from '../lib/documento';
 
@@ -25,10 +26,36 @@ async function buscarTodos(q: () => { range: (a: number, b: number) => PromiseLi
   }
 }
 
+/** Casamento do extrato com o app: identificador, depois valor e data próxima */
+function casarExtrato(ext: ExtratoOFX, app: { pagos: Lancamento[]; abertos: Lancamento[] }): Par[] {
+  const usados = new Set<number>();
+  const fits = new Set(ext.transacoes.map(t => t.fitid));
+  const porFit = new Map(app.pagos.filter(l => l.ofx_fitid).map(l => [l.ofx_fitid!, l]));
+  const r: Par[] = ext.transacoes.map(t => {
+    const l = porFit.get(t.fitid); if (l) { usados.add(l.id); return { t, sit: 'conciliado' as Situacao, l }; }
+    return { t, sit: 'novo' as Situacao };
+  });
+  // Conciliado antes por um Pix do dia (provisório) pode ser casado de novo com a linha definitiva do extrato
+  const livre = (l: Lancamento) => !l.ofx_fitid || (l.ofx_fitid.startsWith('efipix:') && !fits.has(l.ofx_fitid));
+  const casar = (lista: Lancamento[], sit: Situacao, data: (l: Lancamento) => string, tol: number) => r.forEach(p => {
+    if (p.sit !== 'novo') return;
+    const c = lista.filter(l => !usados.has(l.id) && livre(l) && l.tipo === p.t.tipo && Math.abs(Number(l.valor) - p.t.valor) < 0.005 && Math.abs(dias(data(l), p.t.data)) <= tol)
+      .sort((a, b) => Math.abs(dias(data(a), p.t.data)) - Math.abs(dias(data(b), p.t.data)))[0];
+    if (c) { usados.add(c.id); p.sit = sit; p.l = c; }
+  });
+  casar(app.pagos, 'pago', l => l.data_pagamento || l.vencimento, 0);
+  casar(app.pagos, 'pago', l => l.data_pagamento || l.vencimento, 5);
+  casar(app.abertos, 'aberto', l => l.vencimento, 20);
+  return r;
+}
+
 export default function Conciliacao() {
   const { contas, grupos, subgrupos, centros, beneficiarios } = useCadastros();
   const [conta, setConta] = usePersistente('conc:conta', '');
-  const [arquivo, setArquivo] = usePersistente<{ nome: string; ext: ExtratoOFX } | null>('conc:extrato', null);
+  const [arquivo, setArquivo] = usePersistente<{ nome: string; ext: ExtratoOFX; origem?: 'ofx' | 'api'; buscadoEm?: string; conta?: string } | null>('conc:extrato', null);
+  const [periodo, setPeriodo] = usePersistente('conc:periodo', { inicio: somaDias(hojeISO(), -30), fim: hojeISO() });
+  const [buscando, setBuscando] = useState(false);
+  const autoRef = useRef(false);
   const [dec, setDec] = usePersistente<Record<string, Dec>>('conc:decisoes', {});
   const [app, setApp] = useState<{ pagos: Lancamento[]; abertos: Lancamento[] }>({ pagos: [], abertos: [] });
   const [dic, setDic] = useState<Awaited<ReturnType<typeof carregarDicionario>>>([]);
@@ -39,7 +66,7 @@ export default function Conciliacao() {
   const [proc, setProc] = useState(false);
   const [versao, setVersao] = useState(0);
   const [todasSobras, setTodasSobras] = useState(false);
-  const ext = arquivo?.ext;
+  const ext = arquivo && (!arquivo.conta || arquivo.conta === conta) ? arquivo.ext : undefined;
 
   useEffect(() => { carregarDicionario().then(setDic); }, [versao]);
 
@@ -50,30 +77,49 @@ export default function Conciliacao() {
       buscarTodos(() => supabase.from('lancamentos').select('*').eq('conta_id', c).eq('status', 'pago').gte('data_pagamento', ini).lte('data_pagamento', fim).order('id')),
       buscarTodos(() => supabase.from('lancamentos').select('*').neq('status', 'pago').or(`conta_id.eq.${c},conta_id.is.null`).gte('vencimento', somaDias(ext.inicio, -20)).lte('vencimento', somaDias(ext.fim, 20)).order('id')),
       ext.dataSaldo ? supabase.rpc('saldo_conta_em', { p_conta: c, p_data: ext.dataSaldo }) : Promise.resolve({ data: null }),
-    ]).then(([pagos, abertos, s]) => { setApp({ pagos, abertos }); setSaldoApp(s.data == null ? null : Number(s.data)); })
-      .catch(e => setErro((e as Error).message));
+    ]).then(async ([pagos, abertos, s]) => {
+      const dados = { pagos, abertos };
+      if (autoRef.current) { autoRef.current = false; if (await conciliarExatos(casarExtrato(ext, dados))) return; }
+      setApp(dados); setSaldoApp(s.data == null ? null : Number(s.data));
+    }).catch(e => setErro((e as Error).message));
   }, [ext, conta, versao]);
 
-  /** Casamento do extrato com o app: identificador, depois valor e data próxima */
-  const pares = useMemo<Par[]>(() => {
-    if (!ext || !conta) return [];
-    const usados = new Set<number>();
-    const porFit = new Map(app.pagos.filter(l => l.ofx_fitid).map(l => [l.ofx_fitid!, l]));
-    const r: Par[] = ext.transacoes.map(t => {
-      const l = porFit.get(t.fitid); if (l) { usados.add(l.id); return { t, sit: 'conciliado' as Situacao, l }; }
-      return { t, sit: 'novo' as Situacao };
-    });
-    const casar = (lista: Lancamento[], sit: Situacao, data: (l: Lancamento) => string, tol: number) => r.forEach(p => {
-      if (p.sit !== 'novo') return;
-      const c = lista.filter(l => !usados.has(l.id) && !l.ofx_fitid && l.tipo === p.t.tipo && Math.abs(Number(l.valor) - p.t.valor) < 0.005 && Math.abs(dias(data(l), p.t.data)) <= tol)
-        .sort((a, b) => Math.abs(dias(data(a), p.t.data)) - Math.abs(dias(data(b), p.t.data)))[0];
-      if (c) { usados.add(c.id); p.sit = sit; p.l = c; }
-    });
-    casar(app.pagos, 'pago', l => l.data_pagamento || l.vencimento, 0);
-    casar(app.pagos, 'pago', l => l.data_pagamento || l.vencimento, 5);
-    casar(app.abertos, 'aberto', l => l.vencimento, 20);
-    return r;
-  }, [ext, conta, app]);
+  /** Itens com mesmo valor e mesma data de um lançamento já pago: conciliados sem pedir confirmação */
+  async function conciliarExatos(lista: Par[]) {
+    const exatos = lista.filter(p => p.sit === 'pago' && p.l!.data_pagamento === p.t.data);
+    let n = 0;
+    for (const p of exatos) {
+      const r = await supabase.from('lancamentos').update({ ofx_fitid: p.t.fitid, atualizado_em: new Date().toISOString() }).eq('id', p.l!.id);
+      if (!r.error) n++;
+    }
+    if (n) { setMsg(`${n} item(ns) com mesmo valor e data conciliado(s) automaticamente.`); setVersao(v => v + 1); return true; }
+    return false;
+  }
+
+  const contaSel = contas.find(c => String(c.id) === conta);
+  const integ = contaSel?.integracao || null;
+
+  async function buscarBanco(ini = periodo.inicio, fim = periodo.fim) {
+    if (!integ) return;
+    setErro(''); setMsg(''); setBuscando(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const e = await buscarExtratoBanco(integ, ini, fim, data.session?.access_token || '');
+      autoRef.current = true;
+      setDec({}); setArquivo({ nome: `${integ === 'inter' ? 'API Inter' : 'API Efí'} · buscado em ${dataBR(hojeISO())}`, ext: e, origem: 'api', buscadoEm: hojeISO(), conta });
+    } catch (err) { setErro((err as Error).message); }
+    setBuscando(false);
+  }
+
+  // Ao abrir a tela com uma conta integrada, busca o extrato do dia automaticamente
+  useEffect(() => {
+    if (!integ || buscando) return;
+    if (arquivo?.origem === 'api' && arquivo.conta === conta && arquivo.buscadoEm === hojeISO()) return;
+    if (arquivo && arquivo.origem !== 'api' && arquivo.conta === conta) return;
+    buscarBanco(somaDias(hojeISO(), -30), hojeISO());
+  }, [conta, integ]);
+
+  const pares = useMemo<Par[]>(() => (ext && conta ? casarExtrato(ext, app) : []), [ext, conta, app]);
 
   const sobras = useMemo(() => {
     if (!ext) return [];
@@ -109,7 +155,7 @@ export default function Conciliacao() {
     try {
       const e = lerOFX(decodificar(await f.arrayBuffer()));
       if (!e.transacoes.length) throw new Error('Nenhuma transação encontrada no arquivo.');
-      setDec({}); setArquivo({ nome: f.name, ext: e });
+      setDec({}); setArquivo({ nome: f.name, ext: e, origem: 'ofx', conta });
     } catch (err) { setErro((err as Error).message); }
   }
 
@@ -158,19 +204,25 @@ export default function Conciliacao() {
 
   return (
     <>
-      <Cabecalho titulo="Conciliação bancária" sub="Importe o extrato em OFX para conferir saldos e lançamentos">
+      <Cabecalho titulo="Conciliação bancária" sub="Extrato buscado no banco (Inter e Efí) ou importado em OFX, para conferir saldos e lançamentos">
         {arquivo && <button className="btn ghost" onClick={novaImportacao}>Nova importação</button>}
       </Cabecalho>
       <div className="card">
         <div className="filters" style={{ margin: 0 }}>
           <label style={{ fontSize: 13 }}>Conta <select value={conta} onChange={e => { setConta(e.target.value); setDec({}); }}><option value="">Selecione</option>{contas.filter(c => c.ativa && c.tipo !== 'especie').map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
           <label className="btn ghost" style={{ cursor: conta ? 'pointer' : 'default', opacity: conta ? 1 : 0.4 }}>
-            {arquivo ? 'Trocar arquivo OFX' : 'Escolher arquivo OFX'}
+            {integ ? 'Usar arquivo OFX' : arquivo ? 'Trocar arquivo OFX' : 'Escolher arquivo OFX'}
             <input type="file" accept=".ofx,.OFX" disabled={!conta} style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) abrirArquivo(f); e.target.value = ''; }} />
           </label>
-          {arquivo && <span style={{ fontSize: 13, color: 'var(--muted)' }}>{arquivo.nome} · {dataBR(ext!.inicio)} a {dataBR(ext!.fim)} · {ext!.transacoes.length} transações · entradas {brl(totE)} · saídas {brl(totS)}</span>}
+          {integ && <>
+            <span style={{ fontSize: 13 }}>Período</span><DataBR value={periodo.inicio} onChange={e => setPeriodo({ ...periodo, inicio: e.target.value })} style={{ width: 132 }} />
+            <span style={{ fontSize: 13 }}>a</span><DataBR value={periodo.fim} onChange={e => setPeriodo({ ...periodo, fim: e.target.value })} style={{ width: 132 }} />
+            <button className="btn" disabled={buscando || !periodo.inicio || !periodo.fim} onClick={() => buscarBanco()}>{buscando ? 'Buscando no banco…' : `Buscar no ${integ === 'inter' ? 'Inter' : 'Efí'}`}</button>
+          </>}
+          {arquivo && ext && <span style={{ fontSize: 13, color: "var(--muted)" }}>{arquivo.nome} · {dataBR(ext!.inicio)} a {dataBR(ext!.fim)} · {ext!.transacoes.length} transações · entradas {brl(totE)} · saídas {brl(totS)}</span>}
         </div>
-        {!conta && <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0' }}>Escolha a conta e o arquivo OFX baixado do internet banking. O extrato fica guardado nesta tela até você iniciar uma nova importação.</p>}
+        {!conta && <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0' }}>Escolha a conta. Nas contas integradas (Inter e Efí), o extrato é buscado no banco ao abrir a tela; nas demais, envie o arquivo OFX baixado do internet banking.</p>}
+        {ext?.avisos?.map((a, i) => <div key={i} className="proto mt">{a}</div>)}
         {erro && <div className="err mt">{erro}</div>}
         {msg && <div className="ok mt">{msg}</div>}
       </div>
@@ -203,7 +255,7 @@ export default function Conciliacao() {
                   <tr key={p.t.fitid} className={p.sit === 'conciliado' ? 'ok-row' : p.sit === 'novo' ? 'warn-row' : ''}>
                     <td className="c">{p.sit !== 'conciliado' && <input type="checkbox" checked={d.marcado} disabled={!ok} onChange={e => mudar(p, 'marcado', e.target.checked)} />}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{dataBR(p.t.data)}</td>
-                    <td style={{ maxWidth: 300 }}>{p.t.nome || p.t.memo}{p.t.memo && p.t.nome && p.t.memo !== p.t.nome && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.t.memo}</div>}</td>
+                    <td style={{ maxWidth: 300 }}>{p.t.provisorio && <span className="tag" title="Pix recebido hoje; o extrato definitivo do Efí chega no dia seguinte">Pix do dia</span>} {p.t.nome || p.t.memo}{p.t.memo && p.t.nome && p.t.memo !== p.t.nome && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.t.memo}</div>}</td>
                     <td className={'r ' + (p.t.tipo === 'entrada' ? 'pos' : '')} style={{ whiteSpace: 'nowrap' }}>{p.t.tipo === 'saida' ? '−' : ''}{brl(p.t.valor)}</td>
                     <td><span className={'st ' + (p.sit === 'conciliado' || p.sit === 'pago' ? 'pago' : p.sit === 'aberto' ? 'agen' : 'venc')}>{SIT[p.sit]}</span></td>
                     <td>

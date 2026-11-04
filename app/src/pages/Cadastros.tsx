@@ -35,11 +35,12 @@ export default function Cadastros() {
         {aba === 'beneficiarios' && <AbaBeneficiarios beneficiarios={beneficiarios} grupos={grupos} subgrupos={subgrupos} recarregar={recarregar} />}
 
         {aba === 'contas' && (
-          <table><thead><tr><th>Conta</th><th>Tipo</th><th className="r">Saldo inicial</th><th>Data do saldo inicial</th><th>Ativa</th></tr></thead>
+          <table><thead><tr><th>Conta</th><th>Tipo</th><th className="r">Saldo inicial</th><th>Data do saldo inicial</th><th>Integração bancária</th><th>Ativa</th></tr></thead>
             <tbody>{contas.map(c => (
               <tr key={c.id}><td>{c.nome}</td><td>{TIPO[c.tipo]}</td>
                 <td className="r"><CampoValor defaultValue={c.saldo_inicial} style={{ width: 140, textAlign: 'right' }} onBlur={e => Number(e.target.value) !== Number(c.saldo_inicial) && gravar('contas', c.id, 'saldo_inicial', Number(e.target.value))} /></td>
                 <td><DataBR defaultValue={c.data_saldo_inicial} onBlur={e => e.target.value !== c.data_saldo_inicial && gravar('contas', c.id, 'data_saldo_inicial', e.target.value)} /></td>
+                <td>{c.tipo === 'corrente' ? <select value={c.integracao || ''} onChange={e => gravar('contas', c.id, 'integracao', e.target.value || null)}><option value="">Nenhuma (OFX)</option><option value="inter">API Inter</option><option value="efi">API Efí</option></select> : '·'}</td>
                 <td><input type="checkbox" checked={c.ativa} onChange={e => gravar('contas', c.id, 'ativa', e.target.checked)} /></td></tr>
             ))}</tbody></table>
         )}

@@ -1,6 +1,6 @@
 /** Leitura de extratos OFX (versões 1.x em SGML e 2.x em XML) */
-export interface TransacaoOFX { fitid: string; data: string; valor: number; tipo: 'entrada' | 'saida'; nome: string; memo: string; trntype: string; documento: string }
-export interface ExtratoOFX { banco: string; agencia: string; conta: string; inicio: string; fim: string; saldo: number | null; dataSaldo: string | null; transacoes: TransacaoOFX[] }
+export interface TransacaoOFX { fitid: string; data: string; valor: number; tipo: 'entrada' | 'saida'; nome: string; memo: string; trntype: string; documento: string; provisorio?: boolean }
+export interface ExtratoOFX { banco: string; agencia: string; conta: string; inicio: string; fim: string; saldo: number | null; dataSaldo: string | null; transacoes: TransacaoOFX[]; avisos?: string[] }
 
 /** Decodifica respeitando o charset do cabeçalho (bancos brasileiros costumam usar 1252) */
 export function decodificar(buf: ArrayBuffer) {
@@ -49,3 +49,12 @@ export function lerOFX(texto: string): ExtratoOFX {
 
 /** Texto do extrato usado para descrever e classificar a transação */
 export const descricaoOFX = (t: TransacaoOFX) => [t.nome, t.memo].filter((x, i, a) => x && a.indexOf(x) === i).join(' · ');
+
+/** Busca o extrato direto no banco (Inter ou Efí), pela função do servidor */
+export async function buscarExtratoBanco(banco: 'inter' | 'efi', inicio: string, fim: string, token: string): Promise<ExtratoOFX> {
+  const r = await fetch(`/api/extrato?banco=${banco}&inicio=${inicio}&fim=${fim}`, { headers: { Authorization: 'Bearer ' + token } });
+  let j: (ExtratoOFX & { erro?: string }) | null = null;
+  try { j = await r.json(); } catch { /* resposta vazia */ }
+  if (!r.ok || !j) throw new Error(j?.erro || `O servidor não respondeu (${r.status}).`);
+  return { banco: j.banco, agencia: '', conta: '', inicio: j.inicio, fim: j.fim, saldo: j.saldo ?? null, dataSaldo: j.dataSaldo ?? null, transacoes: j.transacoes || [], avisos: j.avisos || [] };
+}
