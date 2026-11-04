@@ -10,6 +10,7 @@ import { invalidarDicionario } from '../lib/sugestao';
 import SugestaoClassificacao from '../components/SugestaoClassificacao';
 import { EditorRateio, HistoricoPagamentos, linhaVazia, somaRateio } from '../components/Rateio';
 import { DetalheLote } from '../components/Recebimentos';
+import { ModalEditarLote } from '../components/EditarLote';
 import { carregarRateio, gravarRateio, type LinhaRateio } from '../lib/titulos';
 import { Cabecalho } from '../components/Layout';
 import { FormBeneficiario } from '../components/Beneficiarios';
@@ -36,6 +37,8 @@ export default function Lancamentos() {
   const [form, setForm] = usePersistente<Form | null>('lanc:form', null);
   const [rateio, setRateio] = usePersistente<LinhaRateio[] | null>('lanc:rateio', null);
   const [comRateio, setComRateio] = useState<Set<number>>(new Set());
+  const [lotes, setLotes] = useState<Map<number, number>>(new Map());   // lançamento → lote de baixa de boletos
+  const [loteAberto, setLoteAberto] = useState<number | null>(null);
   const fechar = () => { setForm(null); setRateio(null); };
   const [baixa, setBaixa] = useState<{ data: string; conta: string } | null>(null);
   const [erro, setErro] = useState('');
@@ -72,6 +75,16 @@ export default function Lancamentos() {
           ((r.data as { lancamento_id: number }[]) || []).forEach(x => com.add(x.lancamento_id));
         }
         setComRateio(com);
+        // Baixas em lote de boletos aparecem numa linha só, com o total
+        const itens: { lote_id: number; lancamento_id: number }[] = [];
+        for (let i = 0; i < ids.length; i += 200) {
+          const r = await supabase.from('lotes_recebimento_itens').select('lote_id,lancamento_id').in('lancamento_id', ids.slice(i, i + 200));
+          itens.push(...((r.data as typeof itens) || []));
+        }
+        const loteIds = [...new Set(itens.map(x => x.lote_id))];
+        const { data: tipos } = loteIds.length ? await supabase.from('lotes_recebimento').select('id,tipo').in('id', loteIds) : { data: [] };
+        const deBaixa = new Set(((tipos as { id: number; tipo: string }[]) || []).filter(x => x.tipo === 'baixa').map(x => x.id));
+        setLotes(new Map(itens.filter(x => deBaixa.has(x.lote_id)).map(x => [x.lancamento_id, x.lote_id])));
       });
   }, [mes, versao]);
 
@@ -81,6 +94,19 @@ export default function Lancamentos() {
     (!f.status || statusEfetivo(l.status, l.vencimento) === f.status) &&
     (!f.busca || (l.favorecido + nome(grupos, l.grupo_id) + nome(todosSub, l.subgrupo_id)).toLowerCase().includes(f.busca.toLowerCase()))
   ), [lista, f, grupos, subgrupos]);
+  const exibicao = useMemo(() => {
+    const out: (Lancamento | { lote: number; data: string; conta: number | null; valor: number; n: number; grupos: number[] })[] = [];
+    const pos = new Map<number, number>();
+    for (const l of linhas) {
+      const lt = lotes.get(l.id);
+      if (lt == null) { out.push(l); continue; }
+      let i = pos.get(lt);
+      if (i == null) { i = out.length; pos.set(lt, i); out.push({ lote: lt, data: l.data_pagamento || l.vencimento, conta: l.conta_id, valor: 0, n: 0, grupos: [] }); }
+      const g = out[i] as { valor: number; n: number; grupos: number[] };
+      g.valor = Math.round((g.valor + Number(l.valor)) * 100) / 100; g.n++; if (!g.grupos.includes(l.grupo_id)) g.grupos.push(l.grupo_id);
+    }
+    return out;
+  }, [linhas, lotes]);
   const pendentesSel = lista.filter(l => sel.has(l.id) && l.status !== 'pago').length;
   const ent = linhas.filter(l => l.tipo === 'entrada').reduce((a, l) => a + Number(l.valor), 0);
   const sai = linhas.filter(l => l.tipo === 'saida').reduce((a, l) => a + Number(l.valor), 0);
@@ -219,9 +245,17 @@ export default function Lancamentos() {
         </div>
         {linhas.length === 0 ? <div className="empty">Nenhum lançamento neste mês.</div> : (
           <table className="compacta">
-            <thead><tr><th className="c"><input type="checkbox" checked={linhas.length > 0 && linhas.every(l => sel.has(l.id))} onChange={e => setSel(e.target.checked ? new Set(linhas.map(l => l.id)) : new Set())} /></th>
+            <thead><tr><th className="c"><input type="checkbox" checked={linhas.length > 0 && linhas.filter(l => !lotes.has(l.id)).every(l => sel.has(l.id))} onChange={e => setSel(e.target.checked ? new Set(linhas.filter(l => !lotes.has(l.id)).map(l => l.id)) : new Set())} /></th>
               <th>Pagamento</th><th>Vencimento</th><th>Tipo</th><th>Conta</th><th>Grupo</th><th>Subgrupo</th><th>{ROTULO_PARTE}</th><th>Ref.</th><th className="r">Valor</th><th>Status</th></tr></thead>
-            <tbody>{linhas.map(l => { const s = statusEfetivo(l.status, l.vencimento); return (
+            <tbody>{exibicao.map(x => { if ('lote' in x) return (
+              <tr key={'lote' + x.lote} className="clicavel" title="Ver e editar o lote" onClick={() => setLoteAberto(x.lote)}>
+                <td className="c" />
+                <td>{diaMes(x.data)}</td><td style={{ color: 'var(--muted)' }}>·</td><td><span className="pos">Entrada</span><div><span className="tag">Lote</span></div></td>
+                <td>{nome(contas, x.conta)}</td><td>{x.grupos.length === 1 ? nome(grupos, x.grupos[0]) : 'Vários'}</td><td>·</td>
+                <td>Recebimento em lote ({x.n} boleto{x.n > 1 ? 's' : ''})</td><td>·</td>
+                <td className="r pos">{brl(x.valor)}</td><td><span className="st pago">Pago</span></td>
+              </tr>);
+              const l = x; const s = statusEfetivo(l.status, l.vencimento); return (
               <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => abrir({ ...l })}>
                 <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(l.id) : n.delete(l.id); setSel(n); }} /></td>
                 <td>{l.status === 'pago' && l.data_pagamento ? diaMes(l.data_pagamento) : <span style={{ color: 'var(--muted)' }}>·</span>}</td><td style={l.status === 'pago' ? { color: 'var(--muted)' } : undefined}>{diaMes(l.vencimento)}</td><td>{l.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}{l.transferencia_id && <div><span className="tag">Transferência</span></div>}</td>
@@ -283,7 +317,7 @@ export default function Lancamentos() {
                 {brl(Number(form.juros_multa))} serão lançados em <b>{form.tipo === 'saida' ? 'Despesas financeiras' : 'Receitas financeiras'} · Multa/juros por atraso</b>, na data do {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'}{form.status !== 'pago' ? ', quando o status for Pago' : ''}. Total {form.tipo === 'entrada' ? 'recebido' : 'pago'}: {brl(Number(form.valor || 0) + Number(form.juros_multa))}.</p>}
               {form.id && !form.transferencia_id && !form.fatura_id && !form.titulo_id && (form.valor_original != null || form.status !== 'pago') &&
                 <HistoricoPagamentos titulo={form as Lancamento} contas={contas} aoMudar={recarregarForm} />}
-              {form.id && <DetalheLote lancamentoId={form.id} />}
+              {form.id && <DetalheLote lancamentoId={form.id} aoEditar={id => { fechar(); setLoteAberto(id); }} />}
               {form.titulo_id && <p className="full proto" style={{ margin: 0 }}>Este é um {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'} parcial. <a href="#" onClick={async e => { e.preventDefault(); const { data } = await supabase.from('lancamentos').select('*').eq('id', form.titulo_id!).single(); if (data) abrir(data as Lancamento); }}>Abrir a conta original</a> para ver o histórico e o saldo.</p>}
               <label className="full">Observação<input value={form.observacao ?? ''} onChange={e => setForm({ ...form, observacao: e.target.value })} /></label>
               {erro && <div className="err full">{erro}</div>}
@@ -296,6 +330,8 @@ export default function Lancamentos() {
         </div>
       )}
 
+      {loteAberto != null && <ModalEditarLote loteId={loteAberto} cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLoteAberto(null)}
+        aoSalvar={m => { setLoteAberto(null); avisar(m); setVersao(v => v + 1); }} />}
       {novoBenef && form && (
         <FormBeneficiario rascunho="lanc:benef-form" inicial={{ ativo: true, nome: form.favorecido, grupo_id: form.grupo_id ?? null }} grupos={grupos} subgrupos={subgrupos}
           aoFechar={() => setNovoBenef(false)}

@@ -9,14 +9,14 @@ import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { registrarPagamento } from '../lib/titulos';
 import { invalidarDicionario } from '../lib/sugestao';
 
-interface Cad { contas: Conta[]; grupos: Grupo[]; subgrupos: Subgrupo[]; centros: CentroCusto[]; beneficiarios: Beneficiario[] }
-interface Tarifa { houve: boolean; unit: string; benef: string }
+export interface Cad { contas: Conta[]; grupos: Grupo[]; subgrupos: Subgrupo[]; centros: CentroCusto[]; beneficiarios: Beneficiario[] }
+export interface Tarifa { houve: boolean; unit: string; benef: string }
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const rotuloB = (b?: Beneficiario) => (b ? `${b.nome} · ${formatarDocumento(b.documento)}` : '');
 const exigeBenefTarifa = (data: string) => data >= '2027-01-01';
 
 /** Lança a tarifa total do lote (quantidade × custo unitário) em Tarifas Bancárias · Cobrança */
-async function lancarTarifa(cad: Cad, n: number, unit: number, data: string, conta: number, benef: number | null) {
+export async function lancarTarifa(cad: Cad, n: number, unit: number, data: string, conta: number, benef: number | null) {
   const g = cad.grupos.find(x => x.nome === 'Tarifas Bancárias');
   if (!g) throw new Error('Grupo "Tarifas Bancárias" não encontrado no plano de contas.');
   const sg = cad.subgrupos.find(x => x.grupo_id === g.id && x.nome === 'Cobrança');
@@ -30,7 +30,7 @@ async function lancarTarifa(cad: Cad, n: number, unit: number, data: string, con
   return r.data.id as number;
 }
 
-function CamposTarifa({ t, setT, data, cad, n }: { t: Tarifa; setT: (t: Tarifa) => void; data: string; cad: Cad; n: number }) {
+export function CamposTarifa({ t, setT, data, cad, n }: { t: Tarifa; setT: (t: Tarifa) => void; data: string; cad: Cad; n: number }) {
   const [txt, setTxt] = useState(rotuloB(cad.beneficiarios.find(b => String(b.id) === t.benef)));
   return (
     <>
@@ -239,7 +239,7 @@ export function ModalLancarRecebimentos({ cad, aoFechar, aoSalvar }: { cad: Cad;
 /* ---------------- Detalhamento do lote (aberto a partir do lançamento) ---------------- */
 interface Lote { id: number; tipo: string; data: string; quantidade: number; tarifa_unitaria: number; total: number; lanc_consolidado_id: number | null; lanc_tarifa_id: number | null }
 interface ItemLote { id: number; nome: string | null; valor: number; lancamento_id: number | null }
-export function DetalheLote({ lancamentoId }: { lancamentoId: number }) {
+export function DetalheLote({ lancamentoId, aoEditar }: { lancamentoId: number; aoEditar?: (loteId: number) => void }) {
   const [lote, setLote] = useState<Lote | null>(null);
   const [itens, setItens] = useState<ItemLote[]>([]);
   useEffect(() => {
@@ -261,6 +261,8 @@ export function DetalheLote({ lancamentoId }: { lancamentoId: number }) {
         <b style={{ color: 'var(--navy)' }}>{lote.tipo === 'consolidado' ? 'Detalhamento do recebimento consolidado' : 'Lote de baixa de boletos'}</b>
         <span>{dataBR(lote.data)}</span><span>Boletos: <b>{lote.quantidade}</b></span><span>Total: <b className="pos">{brl(lote.total)}</b></span>
         {Number(lote.tarifa_unitaria) > 0 && <span>Tarifa: <b className="neg">{lote.quantidade} × {brl(lote.tarifa_unitaria)} = {brl(tarifa)}</b></span>}
+        <span style={{ flex: 1 }} />
+        {aoEditar && <button type="button" className="btn ghost mini" onClick={() => aoEditar(lote.id)}>Editar lote</button>}
       </div>
       <div style={{ maxHeight: 220, overflow: 'auto', marginTop: 6 }}>
         <table className="compacta"><tbody>{itens.map((x, i) => <tr key={x.id} style={{ background: x.lancamento_id === lancamentoId ? '#FFF8E6' : undefined }}><td style={{ color: 'var(--muted)', width: 30 }}>{i + 1}</td><td>{x.nome || 'Cliente não informado'}</td><td className="r">{brl(x.valor)}</td></tr>)}</tbody></table>
