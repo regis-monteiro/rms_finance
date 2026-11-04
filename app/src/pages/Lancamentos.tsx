@@ -20,6 +20,8 @@ import Rendimentos from '../components/Rendimentos';
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const FORMAS = ['Boleto', 'PIX', 'Débito em conta', 'Transferência (TED)', 'Espécie'];
 type Form = Partial<Lancamento>;
+/** Data que vale para o caixa: pagamento, se pago; senão, vencimento */
+const dataEfetiva = (l: Lancamento) => (l.status === 'pago' && l.data_pagamento ? l.data_pagamento : l.vencimento);
 const rotulo = (b?: { nome: string; documento: string }) => (b ? `${b.nome} · ${formatarDocumento(b.documento)}` : '');
 
 export default function Lancamentos() {
@@ -60,9 +62,10 @@ export default function Lancamentos() {
   useEffect(() => {
     const [a, m] = mes.split('-').map(Number);
     const fim = new Date(a, m, 0).getDate();
-    supabase.from('lancamentos').select('*').gte('vencimento', mes + '-01').lte('vencimento', `${mes}-${fim}`).order('vencimento').order('id')
+    supabase.from('lancamentos').select('*').or(`and(status.eq.pago,data_pagamento.gte.${mes}-01,data_pagamento.lte.${mes}-${fim}),and(status.neq.pago,vencimento.gte.${mes}-01,vencimento.lte.${mes}-${fim})`).order('id').range(0, 4999)
       .then(async ({ data }) => {
-        const ls = (data as Lancamento[]) || []; setLista(ls); setSel(new Set());
+        // Ordem pela data de pagamento (pagos) ou de vencimento (em aberto), como no fluxo de caixa
+        const ls = ((data as Lancamento[]) || []).sort((a, b) => dataEfetiva(a).localeCompare(dataEfetiva(b)) || a.id - b.id); setLista(ls); setSel(new Set());
         const ids = ls.map(l => l.id), com = new Set<number>();
         for (let i = 0; i < ids.length; i += 200) {
           const r = await supabase.from('lancamento_rateios').select('lancamento_id').in('lancamento_id', ids.slice(i, i + 200));
@@ -185,7 +188,7 @@ export default function Lancamentos() {
 
   return (
     <>
-      <Cabecalho titulo="Lançamentos" sub="Fluxo de caixa: todas as entradas e saídas">
+      <Cabecalho titulo="Lançamentos" sub="Fluxo de caixa: pagos pela data de pagamento e em aberto pelo vencimento">
         <button className="btn ghost" onClick={() => setMes(`${m === 1 ? ano - 1 : ano}-${String(m === 1 ? 12 : m - 1).padStart(2, '0')}`)}>‹</button>
         <span className="chip" style={{ fontSize: 13, padding: '7px 12px' }}>{MESES[m - 1]}/{ano}</span>
         <button className="btn ghost" onClick={() => setMes(`${m === 12 ? ano + 1 : ano}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`)}>›</button>
@@ -215,13 +218,13 @@ export default function Lancamentos() {
           <button className="btn gold" onClick={novo}>+ Novo lançamento</button>
         </div>
         {linhas.length === 0 ? <div className="empty">Nenhum lançamento neste mês.</div> : (
-          <table>
+          <table className="compacta">
             <thead><tr><th className="c"><input type="checkbox" checked={linhas.length > 0 && linhas.every(l => sel.has(l.id))} onChange={e => setSel(e.target.checked ? new Set(linhas.map(l => l.id)) : new Set())} /></th>
-              <th>Vencimento</th><th>Tipo</th><th>Conta</th><th>Grupo</th><th>Subgrupo</th><th>{ROTULO_PARTE}</th><th>Ref.</th><th className="r">Valor</th><th>Status</th></tr></thead>
+              <th>Pagamento</th><th>Vencimento</th><th>Tipo</th><th>Conta</th><th>Grupo</th><th>Subgrupo</th><th>{ROTULO_PARTE}</th><th>Ref.</th><th className="r">Valor</th><th>Status</th></tr></thead>
             <tbody>{linhas.map(l => { const s = statusEfetivo(l.status, l.vencimento); return (
               <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => abrir({ ...l })}>
                 <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(l.id) : n.delete(l.id); setSel(n); }} /></td>
-                <td>{diaMes(l.vencimento)}</td><td>{l.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}{l.transferencia_id && <div><span className="tag">Transferência</span></div>}</td>
+                <td>{l.status === 'pago' && l.data_pagamento ? diaMes(l.data_pagamento) : <span style={{ color: 'var(--muted)' }}>·</span>}</td><td style={l.status === 'pago' ? { color: 'var(--muted)' } : undefined}>{diaMes(l.vencimento)}</td><td>{l.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}{l.transferencia_id && <div><span className="tag">Transferência</span></div>}</td>
                 <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(grupos, l.grupo_id)}{comRateio.has(l.id) && <div><span className="tag">Rateio</span></div>}</td><td>{nome(todosSub, l.subgrupo_id) || '·'}</td>
                 <td>{l.favorecido}</td><td>{l.referencia || '·'}</td>
                 <td className={'r ' + (l.tipo === 'entrada' ? 'pos' : '')}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}{l.titulo_id ? <div><span className="tag">Parcial</span></div> : l.valor_original != null ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.status === 'pago' ? 'última parcela de ' : 'saldo de '}{brl(l.valor_original)}</div> : null}</td>

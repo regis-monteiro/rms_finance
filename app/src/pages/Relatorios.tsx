@@ -36,7 +36,7 @@ export default function Relatorios() {
   const [ate, setAte] = useState(() => { const [a, m] = hoje.split('-').map(Number); return `${hoje.slice(0, 8)}${new Date(a, m, 0).getDate()}`; });
   const [selContas, setSelContas] = useState<Set<string>>(new Set());
   const [selCartoes, setSelCartoes] = useState<Set<number>>(new Set());
-  const [opt, setOpt] = useState({ vencidas: true, tipoL: '', statusL: '', base: 'vencimento' });
+  const [opt, setOpt] = useState({ vencidas: true, tipoL: '', statusL: '', base: 'caixa' });
   const [gerando, setGerando] = useState<'' | 'pdf' | 'xlsx'>('');
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; m: string } | null>(null);
 
@@ -70,16 +70,18 @@ export default function Relatorios() {
     if (tipo === 'lancamentos') {
       const campo = opt.base === 'pagamento' ? 'data_pagamento' : 'vencimento';
       const ls = (await todos<Lancamento>((i, f) => {
-        let q = supabase.from('lancamentos').select('*').gte(campo, de).lte(campo, ate).order(campo).order('id').range(i, f);
+        let q = (opt.base === 'caixa' ? supabase.from('lancamentos').select('*').or(`and(status.eq.pago,data_pagamento.gte.${de},data_pagamento.lte.${ate}),and(status.neq.pago,vencimento.gte.${de},vencimento.lte.${ate})`) : supabase.from('lancamentos').select('*').gte(campo, de).lte(campo, ate)).order(campo).order('id').range(i, f);
         if (opt.tipoL) q = q.eq('tipo', opt.tipoL);
         if (opt.statusL === 'pago') q = q.eq('status', 'pago'); else if (opt.statusL === 'aberto') q = q.neq('status', 'pago');
         return q;
       })).filter(passaConta);
+      const efetiva = (l: Lancamento) => (l.status === 'pago' && l.data_pagamento ? l.data_pagamento : l.vencimento);
+      if (opt.base !== 'vencimento') ls.sort((a, b) => efetiva(a).localeCompare(efetiva(b)) || a.id - b.id);
       const ent = ls.filter(l => l.tipo === 'entrada').reduce((a, l) => a + Number(l.valor), 0), sai = ls.filter(l => l.tipo === 'saida').reduce((a, l) => a + Number(l.valor), 0);
       return { ...base, titulo: 'Lançamentos', arquivo: 'lancamentos', paisagem: true,
-        filtros: [contasFiltro(), opt.base === 'pagamento' ? 'por data de pagamento' : 'por vencimento', opt.tipoL ? (opt.tipoL === 'entrada' ? 'só entradas' : 'só saídas') : '', opt.statusL === 'pago' ? 'só pagos' : opt.statusL === 'aberto' ? 'só em aberto' : ''].filter(Boolean).join(' · '),
+        filtros: [contasFiltro(), opt.base === 'pagamento' ? 'por data de pagamento' : opt.base === 'caixa' ? 'por pagamento (pagos) e vencimento (em aberto)' : 'por vencimento', opt.tipoL ? (opt.tipoL === 'entrada' ? 'só entradas' : 'só saídas') : '', opt.statusL === 'pago' ? 'só pagos' : opt.statusL === 'aberto' ? 'só em aberto' : ''].filter(Boolean).join(' · '),
         resumo: [{ rotulo: 'Saldo do período', valor: brl(ent - sai) }, { rotulo: 'Entradas', valor: brl(ent) }, { rotulo: 'Saídas', valor: brl(sai) }, { rotulo: 'Lançamentos', valor: ls.length.toLocaleString('pt-BR') }],
-        secoes: [{ colunas: [{ titulo: 'Vencimento', chave: 'venc', tipo: 'data' }, { titulo: 'Pagamento', chave: 'pag', tipo: 'data' }, { titulo: 'Tipo', chave: 'tipo' }, { titulo: 'Conta', chave: 'conta' }, { titulo: 'Grupo', chave: 'grupo' }, { titulo: 'Subgrupo', chave: 'sub' }, { titulo: 'Fornecedor / Cliente', chave: 'fav' }, { titulo: 'Ref.', chave: 'ref' }, { titulo: 'Status', chave: 'status' }, { titulo: 'Valor', chave: 'valor', tipo: 'moeda' }],
+        secoes: [{ colunas: [{ titulo: 'Pagamento', chave: 'pag', tipo: 'data' }, { titulo: 'Vencimento', chave: 'venc', tipo: 'data' }, { titulo: 'Tipo', chave: 'tipo' }, { titulo: 'Conta', chave: 'conta' }, { titulo: 'Grupo', chave: 'grupo' }, { titulo: 'Subgrupo', chave: 'sub' }, { titulo: 'Fornecedor / Cliente', chave: 'fav' }, { titulo: 'Ref.', chave: 'ref' }, { titulo: 'Status', chave: 'status' }, { titulo: 'Valor', chave: 'valor', tipo: 'moeda' }],
           linhas: [...ls.map(linhaLanc), { fav: 'Entradas', valor: ent, _estilo: 'sub' as const }, { fav: 'Saídas', valor: -sai, _estilo: 'sub' as const }, { fav: 'Saldo do período', valor: ent - sai, _estilo: 'total' as const }] }] };
     }
     if (tipo === 'receber') {
@@ -155,7 +157,7 @@ export default function Relatorios() {
           <label>Até<DataBR required value={ate} onChange={e => setAte(e.target.value)} /></label>
           {tipo === 'pagar' && <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20, gridColumn: 'span 2' }}><input type="checkbox" checked={opt.vencidas} onChange={e => setOpt({ ...opt, vencidas: e.target.checked })} /> Incluir vencidas antes do período</label>}
           {tipo === 'lancamentos' && <>
-            <label>Período por<select value={opt.base} onChange={e => setOpt({ ...opt, base: e.target.value })}><option value="vencimento">Vencimento</option><option value="pagamento">Data de pagamento</option></select></label>
+            <label>Período por<select value={opt.base} onChange={e => setOpt({ ...opt, base: e.target.value })}><option value="caixa">Pagamento (pagos) ou vencimento (em aberto)</option><option value="vencimento">Vencimento</option><option value="pagamento">Só data de pagamento</option></select></label>
             <label>Tipo e status<select value={opt.tipoL + '|' + opt.statusL} onChange={e => { const [t, s] = e.target.value.split('|'); setOpt({ ...opt, tipoL: t, statusL: s }); }}>
               <option value="|">Todos</option><option value="entrada|">Só entradas</option><option value="saida|">Só saídas</option><option value="|pago">Só pagos</option><option value="|aberto">Só em aberto</option></select></label></>}
         </div>
