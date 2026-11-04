@@ -35,7 +35,7 @@ main{padding:26px 32px 60px;min-width:0}
 .g6{grid-template-columns:repeat(6,1fr)} .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)}
 .g21{grid-template-columns:2fr 1fr}
 @media(max-width:1200px){.g6{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(2,1fr)}.g21,.g3{grid-template-columns:1fr}}
-@media(max-width:760px){.app{grid-template-columns:1fr}aside{position:static;height:auto}.g6,.g4,.g2{grid-template-columns:1fr}main{padding:18px}}
+@media(max-width:760px){.modal-bg{left:0}.app{grid-template-columns:1fr}aside{position:static;height:auto}.g6,.g4,.g2{grid-template-columns:1fr}main{padding:18px}}
 .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
 .card h3{font-size:16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
 .card h3 small{font-family:Inter;font-weight:500;font-size:12px;color:var(--muted)}
@@ -75,7 +75,7 @@ select,input{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(-
 .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:16px}
 .tabs button{font:inherit;font-size:13px;font-weight:600;padding:9px 14px;border:0;background:none;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
 .tabs button.on{color:var(--navy);border-color:var(--gold)}
-.modal-bg{position:fixed;inset:0;background:rgba(11,22,44,.45);display:none;align-items:center;justify-content:center;z-index:9;padding:20px}
+.modal-bg{position:fixed;inset:0 0 0 232px;background:rgba(11,22,44,.45);display:none;align-items:center;justify-content:center;z-index:9;padding:20px}
 .modal-bg.open{display:flex}
 .modal{background:var(--paper);border-radius:12px;width:min(560px,100%);padding:22px 24px;max-height:90vh;overflow:auto}
 .modal h2{font-size:20px;margin-bottom:16px}
@@ -135,3 +135,12 @@ a{color:var(--navy)}
   .compacta th,.compacta td{padding:5px 3px;font-size:11.5px}
   .compacta input{font-size:11.5px}
 }
+.btn.mini{padding:3px 9px;font-size:12px;font-weight:600}
+.sugestao{background:#FBF9F3;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;display:flex;flex-direction:column;gap:4px}
+.sugestao a{color:var(--navy);font-weight:600}
+.conc td{vertical-align:top}
+.conc select,.conc input{font-size:12px;padding:4px 6px}
+.conc .ok-row{background:#F3F8F1}
+.conc .warn-row{background:#FFF8E6}
+@media(max-width:760px){.modal-bg{left:0}}
+.pilha{display:flex;flex-direction:column;gap:3px;align-items:flex-end}

@@ -19,6 +19,7 @@ import Comparativos from './pages/Comparativos';
 import Importacao from './pages/Importacao';
 import Orcamento from './pages/Orcamento';
 import Relatorios from './pages/Relatorios';
+import Conciliacao from './pages/Conciliacao';
 
 function App() {
   const { session, usuario, carregando } = useAuth();
@@ -36,6 +37,7 @@ function App() {
         <Route path="pagar" element={so(opera, <Pagar />)} />
         <Route path="receber" element={<Receber />} />
         <Route path="cartoes" element={so(opera, <Cartoes />)} />
+        <Route path="conciliacao" element={so(opera, <Conciliacao />)} />
         <Route path="dre" element={<DRE />} />
         <Route path="comparativos" element={<Comparativos />} />
         <Route path="orcamento" element={<Orcamento />} />

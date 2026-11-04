@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useCadastros } from '../lib/useCadastros';
+import { useCadastros, nomeCentro, OpcoesCentro } from '../lib/useCadastros';
 import { brl } from '../lib/format';
 import { carregarDRE, linhaMensal, pct, resultadoMensal, useAnos, useLinhasDRE, SUBTOTAIS, MESES_LONGOS, type PontoDRE } from '../lib/analises';
 import { GraficoBarras, GraficoLinhas, MESES_CURTOS } from '../lib/graficos';
@@ -13,7 +13,8 @@ type Tipo = 'mes' | 'ano' | 'acum';
 const soma = (a: number[]) => a.reduce((x, y) => x + y, 0);
 
 export default function Comparativos() {
-  const { contas } = useCadastros();
+  const { contas, centros } = useCadastros();
+  const [centro, setCentro] = useState<number | null>(null);
   const linhas = useLinhasDRE();
   const anos = useAnos();
   const hoje = new Date();
@@ -27,9 +28,9 @@ export default function Comparativos() {
   const { usuario } = useAuth();
 
   useEffect(() => {
-    carregarDRE(ano, conta).then(setAtual).catch(() => setAtual([]));
-    carregarDRE(ano - 1, conta).then(setAnterior).catch(() => setAnterior([]));
-  }, [ano, conta]);
+    carregarDRE(ano, conta, centro).then(setAtual).catch(() => setAtual([]));
+    carregarDRE(ano - 1, conta, centro).then(setAnterior).catch(() => setAnterior([]));
+  }, [ano, conta, centro]);
 
   const resultado = linhas.filter(l => l.no_resultado);
   const receitaId = resultado.find(l => l.ordem === 10)?.id;
@@ -76,7 +77,7 @@ export default function Comparativos() {
     const v = (a: number, b: number) => (b ? (a - b) / Math.abs(b) : null);
     const r: Relatorio = { titulo: 'Comparativos', arquivo: `comparativos_${ano}_${String(mes).padStart(2, '0')}`, paisagem: true, usuario: usuario?.nome || usuario?.email || '', assinaturas,
       periodo: `${rotA} x ${rotB}`,
-      filtros: [tipoTxt, conta ? 'Conta: ' + contas.find(c => c.id === conta)?.nome : 'Todas as contas', 'valores realizados'].join(' · '),
+      filtros: [tipoTxt, conta ? 'Conta: ' + contas.find(c => c.id === conta)?.nome : 'Todas as contas', ...(centro ? ['Centro de custo: ' + nomeCentro(centros, centro)] : []), 'valores realizados'].join(' · '),
       resumo: [{ rotulo: 'Receita de serviços', valor: brl(rec.a) }, { rotulo: 'Custos e despesas', valor: brl(desp.a) }, { rotulo: 'Resultado líquido', valor: brl(res.a) }, { rotulo: `Resultado em ${rotB}`, valor: brl(res.b) }],
       secoes: [
         { titulo: `DRE comparativo · ${rotA} x ${rotB}`, colunas: [{ titulo: 'Linha', chave: 'n' }, { titulo: rotA, chave: 'a', tipo: 'moeda' }, { titulo: rotB, chave: 'b', tipo: 'moeda' }, { titulo: 'Variação R$', chave: 'd', tipo: 'moeda' }, { titulo: 'Variação %', chave: 'p', tipo: 'pct' }, { titulo: '% da receita', chave: 'r', tipo: 'pct' }],
@@ -112,6 +113,7 @@ export default function Comparativos() {
         <div className="tabs" style={{ margin: 0, border: 0 }}>{([['mes', 'Mês anterior'], ['ano', 'Mesmo mês do ano anterior'], ['acum', 'Acumulado do ano']] as [Tipo, string][]).map(([k, t]) => <button key={k} className={tipo === k ? 'on' : ''} onClick={() => setTipo(k)}>{t}</button>)}</div>
         <span style={{ flex: 1 }} />
         <select value={conta ?? ''} onChange={e => setConta(e.target.value ? Number(e.target.value) : null)}><option value="">Todas as contas</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
+        <select value={centro ?? ''} onChange={e => setCentro(e.target.value ? Number(e.target.value) : null)}><option value="">Todos os centros de custo</option><OpcoesCentro centros={centros} /></select>
         <select value={mes} onChange={e => setMes(Number(e.target.value))}>{MESES_LONGOS.map((m, i) => <option key={m} value={i + 1}>Mês base: {m}</option>)}</select>
         <select value={ano} onChange={e => setAno(Number(e.target.value))}>{anos.map(a => <option key={a}>{a}</option>)}</select>
       </div>

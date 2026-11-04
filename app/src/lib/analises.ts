@@ -22,8 +22,8 @@ export function useAnos() {
   return anos;
 }
 
-export async function carregarDRE(ano: number, conta: number | null) {
-  const { data, error } = await supabase.rpc('dre_mensal', { p_ano: ano, p_conta: conta });
+export async function carregarDRE(ano: number, conta: number | null, centro: number | null = null) {
+  const { data, error } = await supabase.rpc('dre_mensal', { p_ano: ano, p_conta: conta, p_centro: centro });
   if (error) throw error;
   return (data as PontoDRE[]) || [];
 }

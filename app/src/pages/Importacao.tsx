@@ -86,7 +86,7 @@ export default function Importacao() {
       )}
 
       {desfazer && (
-        <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setDesfazer(null)}>
+        <div className="modal-bg open">
           <div className="modal"><h2>Desfazer importação de {desfazer.ano}?</h2>
             <p style={{ color: 'var(--muted)' }}>Serão apagados {desfazer.lancamentos.toLocaleString('pt-BR')} lançamentos e {desfazer.compras.toLocaleString('pt-BR')} compras de cartão desse ano. Para recuperar, basta rodar o arquivo de carga de novo no Supabase.</p>
             <div className="actions"><button className="btn ghost" onClick={() => setDesfazer(null)}>Cancelar</button><button className="btn" style={{ background: 'var(--neg)', borderColor: 'var(--neg)' }} onClick={confirmarDesfazer}>Desfazer {desfazer.ano}</button></div>

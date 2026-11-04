@@ -16,7 +16,7 @@ export function ModalEmissao({ titulo, assinatura, extras, aoFechar, aoGerar }: 
     setGerando('');
   }
   return (
-    <div className="modal-bg open" onClick={e => e.target === e.currentTarget && aoFechar()}>
+    <div className="modal-bg open">
       <div className="modal"><h2>Emitir · {titulo}</h2>
         {extras}
         {assinatura && (

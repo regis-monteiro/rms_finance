@@ -4,6 +4,7 @@ import DataBR from './DataBR';
 import { supabase, type Lancamento, type Status, type Conta, type Grupo, type Subgrupo, type Beneficiario } from '../lib/supabase';
 import { brl, dataBR, STATUS_LABEL } from '../lib/format';
 import { formatarDocumento } from '../lib/documento';
+import { usePersistente } from '../lib/rascunho';
 
 export const somaMeses = (iso: string, k: number) => {
   const [a, m, d] = iso.split('-').map(Number);
@@ -17,7 +18,7 @@ const ESPECIAIS = ['Transferências', 'Pagamento de fatura'];
 interface Cad { contas: Conta[]; grupos: Grupo[]; subgrupos: Subgrupo[]; beneficiarios: Beneficiario[] }
 
 function Modal({ titulo, largura = 600, aoFechar, children }: { titulo: string; largura?: number; aoFechar: () => void; children: React.ReactNode }) {
-  return <div className="modal-bg open" onClick={e => e.target === e.currentTarget && aoFechar()}><div className="modal" style={{ width: `min(${largura}px,100%)` }}><h2>{titulo}</h2>{children}</div></div>;
+  return <div className="modal-bg open"><div className="modal" style={{ width: `min(${largura}px,100%)` }}><h2>{titulo}</h2>{children}</div></div>;
 }
 
 function CampoBeneficiario({ cad, valor, aoMudar, obrigatorio }: { cad: Cad; valor: number | null; aoMudar: (b: Beneficiario | null) => void; obrigatorio?: boolean }) {
@@ -32,7 +33,7 @@ function CampoBeneficiario({ cad, valor, aoMudar, obrigatorio }: { cad: Cad; val
 
 /* ---------------- Transferência entre contas ---------------- */
 export function ModalTransferencia({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad; hoje: string; aoFechar: () => void; aoSalvar: () => void }) {
-  const [f, setF] = useState({ origem: '', destino: '', data: hoje, valor: '', status: 'pago' as Status, obs: '' });
+  const [f, setF] = usePersistente('lote:transf', { origem: '', destino: '', data: hoje, valor: '', status: 'pago' as Status, obs: '' });
   const [erro, setErro] = useState('');
   const ativas = cad.contas.filter(c => c.ativa);
   async function salvar(e: React.FormEvent) {
@@ -69,7 +70,7 @@ export function ModalTransferencia({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad
 /* ---------------- Previsões em lote: repetição mensal ---------------- */
 export function ModalRepeticao({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad; hoje: string; aoFechar: () => void; aoSalvar: (n: number) => void }) {
   const mesAtual = hoje.slice(0, 7);
-  const [f, setF] = useState({ tipo: 'saida', conta: '', grupo: '', sub: '', benef: null as number | null, fav: '', valor: '', dia: hoje.slice(8, 10), de: mesAtual, ate: `${hoje.slice(0, 4)}-12`, reaj: '', mesReaj: '', status: 'previsto' as Status, ref: true });
+  const [f, setF] = usePersistente('lote:repet', { tipo: 'saida', conta: '', grupo: '', sub: '', benef: null as number | null, fav: '', valor: '', dia: hoje.slice(8, 10), de: mesAtual, ate: `${hoje.slice(0, 4)}-12`, reaj: '', mesReaj: '', status: 'previsto' as Status, ref: true });
   const [erro, setErro] = useState('');
   const meses = useMemo(() => { const r: string[] = []; let m = f.de; while (m <= f.ate && r.length < 60) { r.push(m); m = somaMeses(m + '-01', 1).slice(0, 7); } return r; }, [f.de, f.ate]);
   const valorDo = (m: string) => { const v = Number(f.valor || 0); return f.reaj && f.mesReaj && m >= f.mesReaj ? Math.round(v * (1 + Number(f.reaj) / 100) * 100) / 100 : v; };
@@ -116,7 +117,7 @@ export function ModalRepeticao({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad; ho
 
 /* ---------------- Copiar selecionados como previsão ---------------- */
 export function ModalCopiar({ itens, cad, aoFechar, aoSalvar }: { itens: Lancamento[]; cad: Cad; aoFechar: () => void; aoSalvar: (n: number) => void }) {
-  const [f, setF] = useState({ meses: '1', reaj: '', manterConta: true });
+  const [f, setF] = usePersistente('lote:copiar', { meses: '1', reaj: '', manterConta: true });
   const [erro, setErro] = useState('');
   const copiaveis = itens.filter(l => !l.fatura_id && !l.transferencia_id);
   const n = Math.max(1, Math.min(24, Number(f.meses) || 1));
@@ -150,8 +151,8 @@ export function ModalCopiar({ itens, cad, aoFechar, aoSalvar }: { itens: Lancame
 
 /* ---------------- Alteração em lote ---------------- */
 export function ModalAlterarLote({ itens, cad, hoje, aoFechar, aoSalvar }: { itens: Lancamento[]; cad: Cad; hoje: string; aoFechar: () => void; aoSalvar: (n: number) => void }) {
-  const [usar, setUsar] = useState({ status: false, conta: false, venc: false, grupo: false, benef: false, valor: false });
-  const [v, setV] = useState({ status: 'confirmado' as Status, dataPag: hoje, conta: '', vencModo: 'data', vencData: hoje, vencN: '0', grupo: '', sub: '', benef: null as number | null, valorModo: 'pct', valor: '' });
+  const [usar, setUsar] = usePersistente('lote:alterar-usar', { status: false, conta: false, venc: false, grupo: false, benef: false, valor: false });
+  const [v, setV] = usePersistente('lote:alterar', { status: 'confirmado' as Status, dataPag: hoje, conta: '', vencModo: 'data', vencData: hoje, vencN: '0', grupo: '', sub: '', benef: null as number | null, valorModo: 'pct', valor: '' });
   const [erro, setErro] = useState('');
   const [processando, setProcessando] = useState(false);
   const especiais = itens.filter(l => l.fatura_id || l.transferencia_id).length;

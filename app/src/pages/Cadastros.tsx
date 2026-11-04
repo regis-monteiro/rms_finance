@@ -7,15 +7,16 @@ import { useCadastros } from '../lib/useCadastros';
 import { Cabecalho } from '../components/Layout';
 import { AbaBeneficiarios } from '../components/Beneficiarios';
 import { useAuth } from '../lib/auth';
+import PlanoContas from '../components/PlanoContas';
+import { usePersistente } from '../lib/rascunho';
 
 const TIPO = { corrente: 'Conta corrente', aplicacao: 'Aplicação', especie: 'Espécie' };
 
 export default function Cadastros() {
   const { contas, cartoes, grupos, subgrupos, beneficiarios, recarregar } = useCadastros();
   const diretor = useAuth().usuario?.perfil === 'diretor';
-  const [aba, setAba] = useState<'beneficiarios' | 'contas' | 'cartoes' | 'grupos' | 'signatarios'>('beneficiarios');
+  const [aba, setAba] = usePersistente<'beneficiarios' | 'contas' | 'cartoes' | 'grupos' | 'signatarios'>('cad:aba', 'beneficiarios');
   const [msg, setMsg] = useState('');
-  const [novoSub, setNovoSub] = useState<{ grupo: string; nome: string }>({ grupo: '', nome: '' });
 
   async function gravar(tabela: string, id: number, campo: string, valor: unknown) {
     const { error } = await supabase.from(tabela).update({ [campo]: valor }).eq('id', id);
@@ -23,13 +24,6 @@ export default function Cadastros() {
     setTimeout(() => setMsg(''), 2500);
     recarregar();
   }
-  async function incluirSub(e: React.FormEvent) {
-    e.preventDefault();
-    const { error } = await supabase.from('subgrupos').insert({ grupo_id: Number(novoSub.grupo), nome: novoSub.nome.trim() });
-    setMsg(error ? 'Erro: ' + error.message : 'Subgrupo incluído');
-    setNovoSub({ ...novoSub, nome: '' }); recarregar();
-  }
-
   return (
     <>
       <Cabecalho titulo="Cadastros" sub="Beneficiários, contas, cartões e plano de contas">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}</Cabecalho>
@@ -65,22 +59,7 @@ export default function Cadastros() {
 
         {aba === 'signatarios' && <AbaSignatarios />}
 
-        {aba === 'grupos' && (
-          <>
-            <form className="filters" onSubmit={incluirSub}>
-              <select required value={novoSub.grupo} onChange={e => setNovoSub({ ...novoSub, grupo: e.target.value })}><option value="" disabled>Grupo</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select>
-              <input required placeholder="Novo subgrupo" value={novoSub.nome} onChange={e => setNovoSub({ ...novoSub, nome: e.target.value })} />
-              <button className="btn gold">+ Incluir subgrupo</button>
-            </form>
-            <table><thead><tr><th>Grupo</th><th>Natureza</th><th>Restrito</th><th>Subgrupos</th></tr></thead>
-              <tbody>{grupos.map(g => (
-                <tr key={g.id}><td><b>{g.nome}</b></td><td>{{ receita: 'Receita', despesa: 'Despesa', movimentacao: 'Movimentação' }[g.natureza]}</td>
-                  <td><input type="checkbox" checked={g.restrito} onChange={e => gravar('grupos', g.id, 'restrito', e.target.checked)} /></td>
-                  <td style={{ color: 'var(--muted)' }}>{subgrupos.filter(s => s.grupo_id === g.id).map(s => s.nome).join(', ') || '·'}</td></tr>
-              ))}</tbody></table>
-            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Grupos restritos (pessoal, pró-labore e sócios) não aparecem em detalhe para o perfil Financeiro.</p>
-          </>
-        )}
+        {aba === 'grupos' && <PlanoContas aoMudar={recarregar} avisar={m => { setMsg(m); setTimeout(() => setMsg(''), 4000); }} />}
       </div>
     </>
   );

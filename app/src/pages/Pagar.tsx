@@ -8,6 +8,7 @@ import { useCadastros } from '../lib/useCadastros';
 import { sincronizarFatura } from '../lib/faturas';
 import { Cabecalho } from '../components/Layout';
 import { formatarDocumento } from '../lib/documento';
+import { usePersistente } from '../lib/rascunho';
 
 const SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
@@ -17,7 +18,7 @@ export default function Pagar() {
   const hoje = hojeISO();
   const [lista, setLista] = useState<Lancamento[]>([]);
   const [f, setF] = useState({ per: 'mes', conta: '', grupo: '', status: '' });
-  const [baixa, setBaixa] = useState<{ l: Lancamento; data: string; conta: string; valor: string; juros: string } | null>(null);
+  const [baixa, setBaixa] = usePersistente<{ l: Lancamento; data: string; conta: string; valor: string; juros: string } | null>('pagar:baixa', null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
 
@@ -109,7 +110,7 @@ export default function Pagar() {
       </div>
 
       {baixa && (
-        <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setBaixa(null)}>
+        <div className="modal-bg open">
           <div className="modal"><h2>Baixar pagamento</h2>
             <p style={{ margin: '-6px 0 14px', color: 'var(--muted)' }}>{baixa.l.favorecido} · vencimento {dataBR(baixa.l.vencimento)} · {brl(baixa.l.valor)}</p>
             {(() => { const b = beneficiarios.find(x => x.id === baixa.l.beneficiario_id); return b && (

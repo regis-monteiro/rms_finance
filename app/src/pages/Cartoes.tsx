@@ -4,7 +4,8 @@ import DataBR from '../components/DataBR';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, type Lancamento, type Status } from '../lib/supabase';
 import { brl, dataBR, diaMes, hojeISO, STATUS_LABEL, classeStatus } from '../lib/format';
-import { useCadastros } from '../lib/useCadastros';
+import { useCadastros, nomeCentro, OpcoesCentro } from '../lib/useCadastros';
+import { usePersistente } from '../lib/rascunho';
 import { datasFatura, obterFatura, sincronizarFatura, situacaoFatura } from '../lib/faturas';
 import { Cabecalho } from '../components/Layout';
 
@@ -14,17 +15,17 @@ const MES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out
 const comp = (c: string) => MES[Number(c.slice(5, 7)) - 1] + '/' + c.slice(0, 4);
 
 export default function Cartoes() {
-  const { contas, grupos, cartoes } = useCadastros();
+  const { centros, contas, grupos, cartoes } = useCadastros();
   const hoje = hojeISO();
   const [params, setParams] = useSearchParams();
   const [faturas, setFaturas] = useState<Fatura[]>([]);
-  const [cartaoId, setCartaoId] = useState<number | null>(null);
-  const [faturaId, setFaturaId] = useState<number | null>(null);
+  const [cartaoId, setCartaoId] = usePersistente<number | null>('cart:cartao', null);
+  const [faturaId, setFaturaId] = usePersistente<number | null>('cart:fatura', null);
   const [compras, setCompras] = useState<Compra[]>([]);
   const [pags, setPags] = useState<Lancamento[]>([]);
   const [aba, setAba] = useState<'compras' | 'pag'>('compras');
-  const [novaCompra, setNovaCompra] = useState<{ data: string; descricao: string; grupo: string; valor: string; parcelas: string } | null>(null);
-  const [pagto, setPagto] = useState<{ conta: string; data: string; valor: string; status: Status } | null>(null);
+  const [novaCompra, setNovaCompra] = usePersistente<{ data: string; descricao: string; grupo: string; valor: string; parcelas: string; centro?: string } | null>('cart:compra', null);
+  const [pagto, setPagto] = usePersistente<{ conta: string; data: string; valor: string; status: Status } | null>('cart:pagto', null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
   const recarregar = () => setVersao(v => v + 1);
@@ -76,7 +77,7 @@ export default function Cartoes() {
       for (let i = 0; i < n; i++) {
         const fid = await obterFatura(cartao, datasFatura(cartao, novaCompra.data, i));
         const { error } = await supabase.from('compras_cartao').insert({ cartao_id: cartao.id, fatura_id: fid, data_compra: novaCompra.data, descricao: novaCompra.descricao,
-          grupo_id: Number(novaCompra.grupo), parcela: n > 1 ? `${String(i + 1).padStart(2, '0')} de ${String(n).padStart(2, '0')}` : null, valor: i === n - 1 ? ultima : base });
+          grupo_id: Number(novaCompra.grupo), centro_custo_id: novaCompra.centro ? Number(novaCompra.centro) : null, parcela: n > 1 ? `${String(i + 1).padStart(2, '0')} de ${String(n).padStart(2, '0')}` : null, valor: i === n - 1 ? ultima : base });
         if (error) throw error;
         tocadas.add(fid);
       }
@@ -187,7 +188,7 @@ export default function Cartoes() {
       )}
 
       {novaCompra && cartao && (
-        <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setNovaCompra(null)}>
+        <div className="modal-bg open">
           <div className="modal"><h2>Nova compra · {cartao.nome}</h2>
             <form className="form" onSubmit={salvarCompra}>
               <label>Data da compra<DataBR required value={novaCompra.data} onChange={e => setNovaCompra({ ...novaCompra, data: e.target.value })} /></label>
@@ -195,6 +196,8 @@ export default function Cartoes() {
               <label className="full">Estabelecimento<input required value={novaCompra.descricao} onChange={e => setNovaCompra({ ...novaCompra, descricao: e.target.value })} /></label>
               <label>Grupo<select required value={novaCompra.grupo} onChange={e => setNovaCompra({ ...novaCompra, grupo: e.target.value })}><option value="" disabled>Selecione</option>
                 {grupos.filter(g => g.natureza !== 'receita' && g.nome !== 'Pagamento de fatura').map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
+              <label>Centro de custo<select value={novaCompra.centro || ''} onChange={e => setNovaCompra({ ...novaCompra, centro: e.target.value })}>
+                <option value="">{'Padrão do plano: ' + (nomeCentro(centros, grupos.find(g => g.id === Number(novaCompra.grupo))?.centro_custo_id) || 'Geral')}</option><OpcoesCentro centros={centros} /></select></label>
               <label>Parcelas<input type="number" min={1} max={24} value={novaCompra.parcelas} onChange={e => setNovaCompra({ ...novaCompra, parcelas: e.target.value })} /></label>
               <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>
                 {novaCompra.data && `Entra na fatura com vencimento em ${dataBR(datasFatura(cartao, novaCompra.data).data_vencimento)}`}
@@ -207,7 +210,7 @@ export default function Cartoes() {
       )}
 
       {pagto && fat && (
-        <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setPagto(null)}>
+        <div className="modal-bg open">
           <div className="modal"><h2>Registrar pagamento · {fat.cartao} {comp(fat.competencia)}</h2>
             <form className="form" onSubmit={salvarPagto}>
               <label>Conta utilizada<select required value={pagto.conta} onChange={e => setPagto({ ...pagto, conta: e.target.value })}><option value="" disabled>Selecione</option>

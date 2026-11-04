@@ -18,6 +18,7 @@ export default function Layout() {
           {item('/pagar', 'Contas a pagar', opera)}
           {item('/receber', 'Contas a receber')}
           {item('/cartoes', 'Cartões', opera)}
+          {item('/conciliacao', 'Conciliação bancária', opera)}
           <div className="sep">Análises</div>
           {item('/dre', 'DRE / Análise do fluxo')}
           {item('/comparativos', 'Comparativos')}

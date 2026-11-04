@@ -42,5 +42,6 @@ Aplicativo de controle financeiro interno da RMS Organização Contábil.
 - Versão 0.4: importação do histórico 2017 a 2025, com conferência e opção de desfazer.
 - Versão 0.5: transferências entre contas, rendimentos de aplicações, previsões e alteração em lote, orçamento automático e datas dd/mm/aaaa.
 - Versão 0.6: relatórios em PDF e Excel no padrão MIV, assinatura no DRE e no Dashboard, números no formato 0,00.
+- Versão 0.7: centros de custo no plano de contas e no DRE, plano de contas editável com reclassificação, conciliação bancária por OFX, sugestão de classificação pelo histórico, IRRF de aplicações lançado só no resgate ou vencimento e rascunho automático dos formulários (script `supabase/010_centros_plano_conciliacao.sql`).
 
 Configuração: ver `docs/configuracao.md`.

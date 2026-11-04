@@ -3,7 +3,10 @@ import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { supabase, type Lancamento, type Status } from '../lib/supabase';
 import { brl, dataBR, diaMes, hojeISO, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
-import { useCadastros } from '../lib/useCadastros';
+import { useCadastros, centroPadrao, nomeCentro, OpcoesCentro } from '../lib/useCadastros';
+import { usePersistente, limparRascunhos } from '../lib/rascunho';
+import { invalidarDicionario } from '../lib/sugestao';
+import SugestaoClassificacao from '../components/SugestaoClassificacao';
 import { Cabecalho } from '../components/Layout';
 import { FormBeneficiario } from '../components/Beneficiarios';
 import { formatarDocumento } from '../lib/documento';
@@ -16,20 +19,21 @@ type Form = Partial<Lancamento>;
 const rotulo = (b?: { nome: string; documento: string }) => (b ? `${b.nome} · ${formatarDocumento(b.documento)}` : '');
 
 export default function Lancamentos() {
-  const { contas, grupos, subgrupos, beneficiarios, recarregar } = useCadastros();
-  const [novoBenef, setNovoBenef] = useState(false);
-  const [buscaBenef, setBuscaBenef] = useState('');
+  const { todosSub, centros, contas, grupos, subgrupos, beneficiarios, recarregar } = useCadastros();
+  const [novoBenef, setNovoBenef] = usePersistente('lanc:novo-benef', false);
+  const [buscaBenef, setBuscaBenef] = usePersistente('lanc:benef', '');
   const hoje = hojeISO();
-  const [mes, setMes] = useState(hoje.slice(0, 7));
+  const [mes, setMes] = usePersistente('lanc:mes', hoje.slice(0, 7));
   const [lista, setLista] = useState<Lancamento[]>([]);
   const [f, setF] = useState({ tipo: '', conta: '', status: '', busca: '' });
   const [sel, setSel] = useState<Set<number>>(new Set());
-  const [form, setForm] = useState<Form | null>(null);
+  const [form, setForm] = usePersistente<Form | null>('lanc:form', null);
   const [baixa, setBaixa] = useState<{ data: string; conta: string } | null>(null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
-  const [aba, setAba] = useState<'lanc' | 'rend'>('lanc');
-  const [modal, setModal] = useState<'transf' | 'repet' | 'copiar' | 'alterar' | null>(null);
+  const [aba, setAba] = usePersistente<'lanc' | 'rend'>('lanc:aba', 'lanc');
+  const [modal, setModalBruto] = usePersistente<'transf' | 'repet' | 'copiar' | 'alterar' | null>('lanc:modal', null);
+  const setModal = (m: typeof modal) => { if (!m) limparRascunhos('lote:'); setModalBruto(m); };
   const [aviso, setAviso] = useState('');
   const avisar = (t: string) => { setAviso(t); setTimeout(() => setAviso(''), 3500); };
 
@@ -44,7 +48,7 @@ export default function Lancamentos() {
   const linhas = useMemo(() => lista.filter(l =>
     (!f.tipo || l.tipo === f.tipo) && (!f.conta || String(l.conta_id) === f.conta) &&
     (!f.status || statusEfetivo(l.status, l.vencimento) === f.status) &&
-    (!f.busca || (l.favorecido + nome(grupos, l.grupo_id) + nome(subgrupos, l.subgrupo_id)).toLowerCase().includes(f.busca.toLowerCase()))
+    (!f.busca || (l.favorecido + nome(grupos, l.grupo_id) + nome(todosSub, l.subgrupo_id)).toLowerCase().includes(f.busca.toLowerCase()))
   ), [lista, f, grupos, subgrupos]);
   const pendentesSel = lista.filter(l => sel.has(l.id) && l.status !== 'pago').length;
   const ent = linhas.filter(l => l.tipo === 'entrada').reduce((a, l) => a + Number(l.valor), 0);
@@ -53,7 +57,7 @@ export default function Lancamentos() {
   async function salvar(e: React.FormEvent) {
     e.preventDefault(); setErro('');
     if (!form) return;
-    const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null,
+    const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null, centro_custo_id: form.centro_custo_id ? Number(form.centro_custo_id) : null,
       data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null, juros_multa: Number(form.juros_multa || 0), atualizado_em: new Date().toISOString() };
     if (form.status === 'pago' && !dados.conta_id) { setErro('Para marcar como Pago, informe a conta.'); return; }
     if (exigeBenef && !form.beneficiario_id) { setErro('A partir de 01/01/2027, escolha um beneficiário cadastrado.'); return; }
@@ -68,7 +72,7 @@ export default function Lancamentos() {
     if (res.error) { setErro(res.error.message); return; }
     const erroJuros = await sincronizarJuros(res.data as Lancamento);
     if (erroJuros) { setErro('Lançamento salvo, mas a multa/juros não foi lançada: ' + erroJuros); setVersao(v => v + 1); return; }
-    setForm(null); setVersao(v => v + 1);
+    invalidarDicionario(); setForm(null); setVersao(v => v + 1);
   }
 
   /** Multa/juros: lançamento separado em Despesas financeiras (pagamento) ou Receitas financeiras (recebimento) */
@@ -169,7 +173,7 @@ export default function Lancamentos() {
               <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => abrir({ ...l })}>
                 <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(l.id) : n.delete(l.id); setSel(n); }} /></td>
                 <td>{diaMes(l.vencimento)}</td><td>{l.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}{l.transferencia_id && <div><span className="tag">Transferência</span></div>}</td>
-                <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(grupos, l.grupo_id)}</td><td>{nome(subgrupos, l.subgrupo_id) || '·'}</td>
+                <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(grupos, l.grupo_id)}</td><td>{nome(todosSub, l.subgrupo_id) || '·'}</td>
                 <td>{l.favorecido}</td><td>{l.referencia || '·'}</td>
                 <td className={'r ' + (l.tipo === 'entrada' ? 'pos' : '')}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}</td>
                 <td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td>
@@ -184,7 +188,7 @@ export default function Lancamentos() {
       </>}
 
       {form && (
-        <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setForm(null)}>
+        <div className="modal-bg open">
           <div className="modal" style={{ width: 'min(920px, 96vw)' }}><h2>{form.id ? 'Editar lançamento' : 'Novo lançamento'}</h2>
             {form.transferencia_id && <p className="proto" style={{ marginTop: -6 }}>Este lançamento faz parte de uma transferência entre contas. Valor, data e status são atualizados nas duas pontas; excluir remove as duas.</p>}
             <form className="form form4" onSubmit={salvar}>
@@ -194,6 +198,10 @@ export default function Lancamentos() {
               <label>Valor (R$)<CampoValor min="0.01" required value={form.valor ?? ''} onChange={e => setForm({ ...form, valor: e.target.value as unknown as number })} /></label>
               <label>Grupo<select required value={form.grupo_id ?? ''} onChange={e => setForm({ ...form, grupo_id: Number(e.target.value), subgrupo_id: null })}><option value="" disabled>Selecione</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
               <label>Subgrupo<select value={form.subgrupo_id ?? ''} onChange={e => setForm({ ...form, subgrupo_id: e.target.value ? Number(e.target.value) : null })}><option value="">·</option>{subsDoGrupo.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
+              <label className="span2">Centro de custo<select value={form.centro_custo_id ?? ''} onChange={e => setForm({ ...form, centro_custo_id: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">{'Padrão do plano: ' + (nomeCentro(centros, centroPadrao(grupos, subgrupos, Number(form.grupo_id), Number(form.subgrupo_id))) || 'Geral (sem centro)')}</option><OpcoesCentro centros={centros} /></select></label>
+              {!form.transferencia_id && !form.fatura_id && <SugestaoClassificacao tipo={form.tipo || 'saida'} beneficiario_id={form.beneficiario_id} texto={form.favorecido} grupo_id={form.grupo_id} subgrupo_id={form.subgrupo_id}
+                grupos={grupos} subgrupos={subgrupos} aoUsar={o => setForm({ ...form, grupo_id: o.grupo_id, subgrupo_id: o.subgrupo_id, centro_custo_id: o.centro_custo_id ?? form.centro_custo_id ?? null })} />}
               <label className="span2">Beneficiário cadastrado{exigeBenef ? ' *' : ' (opcional até 31/12/2026)'}
                 <span style={{ display: 'flex', gap: 6 }}>
                   <input list="lista-benef" style={{ flex: 1 }} placeholder="Digite o nome ou CPF/CNPJ" value={buscaBenef} onChange={e => escolherBenef(e.target.value)} required={exigeBenef} />
@@ -224,13 +232,13 @@ export default function Lancamentos() {
       )}
 
       {novoBenef && form && (
-        <FormBeneficiario inicial={{ ativo: true, nome: form.favorecido, grupo_id: form.grupo_id ?? null }} grupos={grupos} subgrupos={subgrupos}
+        <FormBeneficiario rascunho="lanc:benef-form" inicial={{ ativo: true, nome: form.favorecido, grupo_id: form.grupo_id ?? null }} grupos={grupos} subgrupos={subgrupos}
           aoFechar={() => setNovoBenef(false)}
           aoSalvar={b => { setNovoBenef(false); recarregar(); setBuscaBenef(rotulo(b)); setForm({ ...form, beneficiario_id: b.id, favorecido: b.nome }); }} />
       )}
 
       {baixa && (
-        <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setBaixa(null)}>
+        <div className="modal-bg open">
           <div className="modal"><h2>Baixar {sel.size} lançamento(s)</h2>
             <form className="form" onSubmit={confirmarBaixa}>
               <label>Data do pagamento<DataBR required value={baixa.data} onChange={e => setBaixa({ ...baixa, data: e.target.value })} /></label>

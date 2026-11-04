@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [receb, setReceb] = useState({ previsto: 0, recebido: 0, aberto: 0 });
   const linhasDre = useLinhasDRE();
   const [emitir, setEmitir] = useState(false);
+  const [proj, setProj] = useState<{ conta_id: number; rendimento_pendente: number; irrf_pendente: number }[]>([]);
   const hoje = hojeISO(), [anoH, mesH] = hoje.split('-').map(Number), fimMes = `${hoje.slice(0, 8)}${new Date(anoH, mesH, 0).getDate()}`;
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export default function Dashboard() {
       setReceb({ previsto: ((b.data as { valor: number }[]) || []).reduce((s, x) => s + Number(x.valor), 0), recebido: r.reduce((s, x) => s + Number(x.recebido), 0), aberto: r.reduce((s, x) => s + Number(x.a_receber), 0) });
     });
     if (podeEditar(usuario?.perfil)) {
+      supabase.from('aplicacoes_projecao').select('*').then(({ data }) => setProj((data as typeof proj) || []));
       supabase.from('lancamentos').select('*').eq('tipo', 'saida').neq('status', 'pago').lte('vencimento', fimMes).order('vencimento')
         .then(({ data }) => setAbertos((data as Lancamento[]) || []));
       supabase.from('faturas_resumo').select('*').gte('data_vencimento', somaDias(hoje, -40)).order('data_vencimento')
@@ -80,7 +82,8 @@ export default function Dashboard() {
       <div className="grid g4">
         <div className="card kpi total"><div className="lbl">Saldo total</div><div className="val">{brl(total)}</div><div className="sub">{saldos.length} contas</div></div>
         {saldos.map(s => (
-          <div className="card kpi" key={s.id}><div className="lbl">{s.nome}<span className="tag">{TIPO[s.tipo]}</span></div><div className="val">{brl(s.saldo)}</div></div>
+          <div className="card kpi" key={s.id}><div className="lbl">{s.nome}<span className="tag">{TIPO[s.tipo]}</span></div><div className="val">{brl(s.saldo)}</div>{(() => { const p = proj.find(x => x.conta_id === s.id); if (!p || (!Number(p.rendimento_pendente) && !Number(p.irrf_pendente))) return null;
+            return <div className="sub" title="Saldo lançado + rendimentos ainda não lançados − IRRF projetado (retido só no resgate ou vencimento)">Líquido projetado: {brl(Number(s.saldo) + Number(p.rendimento_pendente) - Number(p.irrf_pendente))}</div>; })()}</div>
         ))}
       </div>
 

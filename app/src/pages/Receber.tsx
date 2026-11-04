@@ -92,7 +92,7 @@ export default function Receber() {
       </div>
 
       {gerar && (
-        <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setGerar(null)}>
+        <div className="modal-bg open">
           <div className="modal"><h2>Gerar previsão de {ano}</h2>
             <form className="form" onSubmit={gerarAno}>
               <label className="full">Base<select value={gerar.base} onChange={e => setGerar({ ...gerar, base: e.target.value as 'anterior' | 'media' })}>

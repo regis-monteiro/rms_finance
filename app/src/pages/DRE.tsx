@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { useCadastros } from '../lib/useCadastros';
+import { useCadastros, nomeCentro, OpcoesCentro } from '../lib/useCadastros';
 import { carregarDRE, useAnos, useLinhasDRE, valorModo, SUBTOTAIS, type Modo, type PontoDRE } from '../lib/analises';
 import { MESES_CURTOS } from '../lib/graficos';
 import { Cabecalho } from '../components/Layout';
@@ -10,7 +10,8 @@ import { useAuth } from '../lib/auth';
 const n = (v: number) => Math.round(v).toLocaleString('pt-BR');
 
 export default function DRE() {
-  const { contas, grupos } = useCadastros();
+  const { contas, grupos, centros } = useCadastros();
+  const [centro, setCentro] = useState<number | null>(null);
   const linhas = useLinhasDRE();
   const anos = useAnos();
   const [ano, setAno] = useState(new Date().getFullYear());
@@ -23,7 +24,7 @@ export default function DRE() {
   const [comGrupos, setComGrupos] = useState(true);
   const { usuario } = useAuth();
 
-  useEffect(() => { setErro(''); carregarDRE(ano, conta).then(setPontos).catch(e => setErro(e.message)); }, [ano, conta]);
+  useEffect(() => { setErro(''); carregarDRE(ano, conta, centro).then(setPontos).catch(e => setErro(e.message)); }, [ano, conta, centro]);
 
   const tabela = useMemo(() => {
     const porLinha = new Map<number, Map<number | null, number[]>>();
@@ -80,9 +81,9 @@ export default function DRE() {
   }
   async function emitirRelatorio(f: 'pdf' | 'xlsx', assinaturas: import('../components/Signatarios').Signatario[]) {
     const nomeConta = conta ? contas.find(c => c.id === conta)?.nome : null;
-    const r = { titulo: 'DRE · Análise do fluxo de caixa', arquivo: `DRE_${ano}`, paisagem: true, usuario: usuario?.nome || usuario?.email || '',
+    const r = { titulo: 'DRE · Análise do fluxo de caixa' + (centro ? ' · ' + nomeCentro(centros, centro) : ''), arquivo: `DRE_${ano}`, paisagem: true, usuario: usuario?.nome || usuario?.email || '',
       periodo: `01/01/${ano} a 31/12/${ano}`, assinaturas,
-      filtros: [nomeConta ? 'Conta: ' + nomeConta : 'Todas as contas', modo === 'real' ? 'Realizado' : modo === 'prev' ? 'Previsto' : 'Realizado + previsto'].join(' · '),
+      filtros: [nomeConta ? 'Conta: ' + nomeConta : 'Todas as contas', centro ? 'Centro de custo: ' + nomeCentro(centros, centro) : 'Todos os centros de custo', modo === 'real' ? 'Realizado' : modo === 'prev' ? 'Previsto' : 'Realizado + previsto'].join(' · '),
       observacao: 'Regime de caixa: realizado pela data de pagamento e previsto pelo vencimento. Compras de cartão entram no mês de vencimento da fatura. Valores em R$.',
       secoes: [{ colunas: [{ titulo: 'Linha / grupo', chave: 'l', largura: 46 }, ...MESES_CURTOS.map((m, i) => ({ titulo: m, chave: 'm' + i, tipo: 'numero' as const })), { titulo: 'Total', chave: 't', tipo: 'numero' as const }], linhas: linhasRelatorio() }] };
     f === 'pdf' ? await gerarPDF(r) : await gerarExcel(r);
@@ -91,7 +92,7 @@ export default function DRE() {
   function exportar() {
     const csv = linhasCsv.map(r => r.map(c => `"${/^-?\d+\.\d+$/.test(c) ? c.replace('.', ',') : c}"`).join(';')).join('\n');
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-    const a = document.createElement('a'); a.href = url; a.download = `DRE_${ano}${conta ? '_' + contas.find(c => c.id === conta)?.nome : ''}.csv`; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url; a.download = `DRE_${ano}${centro ? '_' + nomeCentro(centros, centro) : ''}${conta ? '_' + contas.find(c => c.id === conta)?.nome : ''}.csv`; a.click(); URL.revokeObjectURL(url);
   }
 
   const corpo = <>{resultado.map(blocoLinha)}</>;
@@ -109,6 +110,7 @@ export default function DRE() {
       <div className="filters">
         <select value={ano} onChange={e => setAno(Number(e.target.value))}>{anos.map(a => <option key={a}>{a}</option>)}</select>
         <select value={conta ?? ''} onChange={e => setConta(e.target.value ? Number(e.target.value) : null)}><option value="">Todas as contas</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
+        <select value={centro ?? ''} onChange={e => setCentro(e.target.value ? Number(e.target.value) : null)} title="Centro de custo"><option value="">Todos os centros de custo</option><OpcoesCentro centros={centros} /></select>
         <div className="tabs" style={{ margin: 0, border: 0 }}>{([['real', 'Realizado'], ['prev', 'Previsto'], ['comb', 'Realizado + previsto']] as [Modo, string][]).map(([k, t]) => <button key={k} className={modo === k ? 'on' : ''} onClick={() => setModo(k)}>{t}</button>)}</div>
         <span style={{ flex: 1 }} />
         <button className="btn ghost" onClick={() => setAbertas(new Set(linhas.map(l => l.id)))}>Expandir tudo</button>
@@ -125,7 +127,7 @@ export default function DRE() {
             <tr style={{ fontWeight: 700, background: 'var(--navy)', color: 'var(--ivory)' }}><td>Variação do caixa no mês</td>{variacao.map((v, i) => <td key={i} className="r">{Math.abs(v) < 0.5 ? '·' : n(v)}</td>)}<td className="r">{n(soma(variacao))}</td></tr>
           </tbody>
         </table>
-        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Valores em R$. Realizado pela data de pagamento; previsto pelo vencimento. Compras de cartão entram no mês de vencimento da fatura{conta ? ', na proporção paga por esta conta' : ''}. Clique numa linha para ver os grupos.</p>
+        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Valores em R$. Realizado pela data de pagamento; previsto pelo vencimento. Compras de cartão entram no mês de vencimento da fatura{conta ? ', na proporção paga por esta conta' : ''}. Clique numa linha para ver os grupos.{centro ? ` Centro de custo: ${nomeCentro(centros, centro)}${centros.find(c => c.id === centro)?.nome === 'Geral' ? ' (inclui os subcentros e o que está sem centro)' : ''}.` : ''}</p>
       </div>
       {emitir && <ModalEmissao titulo={`DRE ${ano}`} assinatura aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio}
         extras={<label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginBottom: 8 }}><input type="checkbox" checked={comGrupos} onChange={e => setComGrupos(e.target.checked)} /> Incluir o detalhamento por grupo</label>} />}

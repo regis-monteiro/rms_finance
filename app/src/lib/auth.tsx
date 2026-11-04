@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, type Perfil } from './supabase';
+import { limparRascunhos } from './rascunho';
 
 interface Usuario { id: string; nome: string; email: string; perfil: Perfil; ativo: boolean }
 interface Ctx { session: Session | null; usuario: Usuario | null; carregando: boolean; sair: () => void }
@@ -26,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session]);
 
   return (
-    <AuthCtx.Provider value={{ session, usuario, carregando, sair: () => supabase.auth.signOut() }}>
+    <AuthCtx.Provider value={{ session, usuario, carregando, sair: () => { limparRascunhos(); supabase.auth.signOut(); } }}>
       {children}
     </AuthCtx.Provider>
   );

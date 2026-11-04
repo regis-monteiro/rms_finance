@@ -151,7 +151,7 @@ export default function Orcamento() {
       )}
 
       {gerar && (
-        <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setGerar(null)}>
+        <div className="modal-bg open">
           <div className="modal" style={{ width: 'min(720px,100%)' }}><h2>Orçamento automático {ano}</h2>
             <p style={{ margin: '-4px 0 12px', fontSize: 13, color: 'var(--muted)' }}>Para cada grupo: valor do mesmo mês de {ano - 1} (realizado + previsto) × (1 + crescimento médio anual de {ano - 4} a {ano - 1}), arredondado para cima nas dezenas. Crescimento limitado entre −50% e +100%.</p>
             <div style={{ maxHeight: 360, overflow: 'auto' }}>

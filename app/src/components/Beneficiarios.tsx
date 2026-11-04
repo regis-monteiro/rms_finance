@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react';
 import { supabase, type Beneficiario, type Grupo, type Subgrupo } from '../lib/supabase';
+import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { documentoValido, formatarCep, formatarDocumento, soDigitos, tipoPessoa } from '../lib/documento';
 
 const PIX = { cpf_cnpj: 'CPF/CNPJ', email: 'E-mail', telefone: 'Telefone', aleatoria: 'Chave aleatória' } as Record<string, string>;
 const UFS = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
 type Form = Partial<Beneficiario>;
 
-export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar, aoFechar }: {
-  inicial: Form; grupos: Grupo[]; subgrupos: Subgrupo[]; aoSalvar: (b: Beneficiario) => void; aoFechar: () => void;
+export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, aoFechar: fechar, rascunho = 'benef:form' }: {
+  inicial: Form; grupos: Grupo[]; subgrupos: Subgrupo[]; aoSalvar: (b: Beneficiario) => void; aoFechar: () => void; rascunho?: string;
 }) {
-  const [f, setF] = useState<Form>({ ...inicial, documento: inicial.documento ? formatarDocumento(inicial.documento) : '' });
+  const [f, setF] = usePersistente<Form>(rascunho, () => ({ ...inicial, documento: inicial.documento ? formatarDocumento(inicial.documento) : '' }));
+  const aoFechar = () => { limparRascunhos(rascunho); fechar(); };
+  const aoSalvar = (b: Beneficiario) => { limparRascunhos(rascunho); salvo(b); };
   const [erro, setErro] = useState('');
   const set = (k: keyof Beneficiario, v: unknown) => setF(x => ({ ...x, [k]: v }));
   const docOk = documentoValido(f.documento || '');
@@ -37,7 +40,7 @@ export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar, aoFecha
 
   const subs = subgrupos.filter(s => s.grupo_id === Number(f.grupo_id));
   return (
-    <div className="modal-bg open" onClick={e => e.target === e.currentTarget && aoFechar()}>
+    <div className="modal-bg open">
       <div className="modal" style={{ width: 'min(1080px, 96vw)' }}>
         <h2>{f.id ? 'Editar beneficiário' : 'Novo beneficiário'}</h2>
         <form className="form" onSubmit={salvar} style={{ gridTemplateColumns: 'repeat(6, minmax(0, 1fr))' }}>
@@ -81,7 +84,7 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
 }) {
   const [busca, setBusca] = useState('');
   const [inativos, setInativos] = useState(false);
-  const [edit, setEdit] = useState<Form | null>(null);
+  const [edit, setEdit] = usePersistente<Form | null>('cad:benef-edit', null);
   const lista = useMemo(() => {
     const q = busca.toLowerCase(), qd = soDigitos(busca);
     return beneficiarios.filter(b => (inativos || b.ativo) && (!busca || b.nome.toLowerCase().includes(q) || (b.nome_fantasia || '').toLowerCase().includes(q) || (qd && b.documento.includes(qd))));

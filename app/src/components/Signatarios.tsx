@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { documentoValido, formatarDocumento, soDigitos } from '../lib/documento';
+import { usePersistente } from '../lib/rascunho';
 
 export interface Signatario { id: number; nome: string; cargo: string; tipo: 'contabilista' | 'socio'; registro: string | null; cpf: string | null; ativo: boolean }
 
@@ -16,7 +17,7 @@ export function useSignatarios(versao = 0) {
 export function AbaSignatarios() {
   const [versao, setVersao] = useState(0);
   const lista = useSignatarios(versao);
-  const [ed, setEd] = useState<Partial<Signatario> | null>(null);
+  const [ed, setEd] = usePersistente<Partial<Signatario> | null>('cad:signatario', null);
   const [erro, setErro] = useState('');
   async function salvar(e: React.FormEvent) {
     e.preventDefault(); if (!ed) return; setErro('');
@@ -38,7 +39,7 @@ export function AbaSignatarios() {
             <td><span className={'st ' + (s.ativo ? 'pago' : 'venc')}>{s.ativo ? 'Ativo' : 'Inativo'}</span></td></tr>)}</tbody></table>
       )}
       {ed && (
-        <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setEd(null)}>
+        <div className="modal-bg open">
           <div className="modal"><h2>{ed.id ? 'Editar signatário' : 'Novo signatário'}</h2>
             <form className="form" onSubmit={salvar}>
               <label className="full">Nome completo<input required value={ed.nome || ''} onChange={e => setEd({ ...ed, nome: e.target.value })} /></label>
