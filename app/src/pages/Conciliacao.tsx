@@ -6,7 +6,7 @@ import { brl, dataBR, hojeISO, somaDias, rotuloParte, ROTULO_PARTE } from '../li
 import { useCadastros, OpcoesCentro, nomeCentro, centroPadrao } from '../lib/useCadastros';
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { buscarExtratoBanco, decodificar, descricaoOFX, lerOFX, type ExtratoOFX, type TransacaoOFX } from '../lib/ofx';
-import { carregarDicionario, divergente, invalidarDicionario, sugerir, type Sugestao } from '../lib/sugestao';
+import { carregarDicionario, divergente, invalidarDicionario, palavras, sugerir, type Sugestao } from '../lib/sugestao';
 import { formatarDocumento } from '../lib/documento';
 
 type Situacao = 'conciliado' | 'associado' | 'pago' | 'aberto' | 'novo';
@@ -133,15 +133,22 @@ export default function Conciliacao() {
     setMsg('Associação desfeita. Os lançamentos baixados pela associação continuam pagos.'); setVersao(v => v + 1);
   }
 
-  /** Itens com mesmo valor e mesma data de um lançamento já pago: conciliados sem pedir confirmação */
+  /** O nome no extrato confere com o fornecedor / cliente do lançamento (ao menos uma palavra significativa em comum) */
+  function nomeConfere(t: TransacaoOFX, l: Lancamento) {
+    const b = beneficiarios.find(x => x.id === l.beneficiario_id);
+    const app = new Set(palavras([l.favorecido, b?.nome, b?.nome_fantasia].filter(Boolean).join(' ')));
+    return palavras(descricaoOFX(t)).some(w => app.has(w));
+  }
+
+  /** Itens com mesmo valor, mesma data e mesmo nome de um lançamento já pago: conciliados sem pedir confirmação */
   async function conciliarExatos(lista: Par[]) {
-    const exatos = lista.filter(p => p.sit === 'pago' && p.l!.data_pagamento === p.t.data);
+    const exatos = lista.filter(p => p.sit === 'pago' && p.l!.data_pagamento === p.t.data && nomeConfere(p.t, p.l!));
     let n = 0;
     for (const p of exatos) {
       const r = await supabase.from('lancamentos').update({ ofx_fitid: p.t.fitid, atualizado_em: new Date().toISOString() }).eq('id', p.l!.id);
       if (!r.error) n++;
     }
-    if (n) { setMsg(`${n} item(ns) com mesmo valor e data conciliado(s) automaticamente.`); setVersao(v => v + 1); return true; }
+    if (n) { setMsg(`${n} item(ns) com mesmo valor, data e nome conciliado(s) automaticamente. Os demais aguardam sua confirmação.`); setVersao(v => v + 1); return true; }
     return false;
   }
 
@@ -185,7 +192,7 @@ export default function Conciliacao() {
   /** Decisão de cada linha: a gravada no rascunho ou a sugerida */
   const decisao = (p: Par): Dec => {
     const d = dec[p.t.fitid]; if (d) return d;
-    if (p.sit !== 'novo') return { marcado: p.sit === 'pago' || p.sit === 'aberto', grupo: '', sub: '', centro: '', benef: '', fav: '', ajustarData: true };
+    if (p.sit !== 'novo') return { marcado: (p.sit === 'pago' || p.sit === 'aberto') && !!p.l && nomeConfere(p.t, p.l), grupo: '', sub: '', centro: '', benef: '', fav: '', ajustarData: true };
     const s = sugestoes.get(p.t.fitid), o = s?.opcoes.find(x => !ESPECIAIS.includes(grupos.find(g => g.id === x.grupo_id)?.nome || ''));
     const b = s?.beneficiario_id ? beneficiarios.find(x => x.id === s.beneficiario_id) : undefined;
     return { marcado: false, grupo: o ? String(o.grupo_id) : '', sub: o?.subgrupo_id ? String(o.subgrupo_id) : '', centro: o?.centro_custo_id ? String(o.centro_custo_id) : '', benef: b ? String(b.id) : '', fav: b?.nome || p.t.nome || p.t.memo, ajustarData: true };
@@ -312,6 +319,7 @@ export default function Conciliacao() {
                       {p.a && <div>{p.a.fitids.length > 1 && <span style={{ color: 'var(--muted)' }}>Grupo de {p.a.fitids.length} linhas do extrato · </span>}
                         {p.a.lancs.map(l => <div key={l.id}>{l.favorecido} · {nomeG(l.grupo_id)}{l.subgrupo_id ? ' · ' + nomeS(l.subgrupo_id) : ''} · <span className={l.tipo === 'entrada' ? 'pos' : ''}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}</span></div>)}
                         <button className="btn ghost mini" style={{ marginTop: 3 }} onClick={() => desassociar(p.a!)}>Desfazer associação</button></div>}
+                      {p.l && (p.sit === 'pago' || p.sit === 'aberto') && !nomeConfere(p.t, p.l) && <div style={{ fontSize: 12, color: '#8A6A12', fontWeight: 600 }}>Nome diferente do extrato: confira antes de marcar</div>}
                       {p.l && <div>{p.l.favorecido} · {nomeG(p.l.grupo_id)}{p.l.subgrupo_id ? ' · ' + nomeS(p.l.subgrupo_id) : ''}
                         <span style={{ color: 'var(--muted)' }}> · {p.sit === 'aberto' ? `vence ${dataBR(p.l.vencimento)}; será baixado em ${dataBR(p.t.data)}` : `pago em ${dataBR(p.l.data_pagamento)}`}</span>
                         {p.sit === 'pago' && p.l.data_pagamento !== p.t.data && <label style={{ display: 'block', fontSize: 12, color: '#8A6A12' }}><input type="checkbox" checked={d.ajustarData} onChange={e => mudar(p, 'ajustarData', e.target.checked)} /> Ajustar a data de pagamento para {dataBR(p.t.data)}</label>}</div>}

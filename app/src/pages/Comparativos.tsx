@@ -112,7 +112,7 @@ export default function Comparativos() {
       <div className="filters">
         <div className="tabs" style={{ margin: 0, border: 0 }}>{([['mes', 'Mês anterior'], ['ano', 'Mesmo mês do ano anterior'], ['acum', 'Acumulado do ano']] as [Tipo, string][]).map(([k, t]) => <button key={k} className={tipo === k ? 'on' : ''} onClick={() => setTipo(k)}>{t}</button>)}</div>
         <span style={{ flex: 1 }} />
-        <select value={conta ?? ''} onChange={e => setConta(e.target.value ? Number(e.target.value) : null)}><option value="">Todas as contas</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
+        <select value={conta ?? ''} onChange={e => setConta(e.target.value ? Number(e.target.value) : null)}><option value="">Todas as contas</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
         <select value={centro ?? ''} onChange={e => setCentro(e.target.value ? Number(e.target.value) : null)}><option value="">Todos os centros de custo</option><OpcoesCentro centros={centros} /></select>
         <select value={mes} onChange={e => setMes(Number(e.target.value))}>{MESES_LONGOS.map((m, i) => <option key={m} value={i + 1}>Mês base: {m}</option>)}</select>
         <select value={ano} onChange={e => setAno(Number(e.target.value))}>{anos.map(a => <option key={a}>{a}</option>)}</select>

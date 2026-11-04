@@ -9,6 +9,7 @@ import { sincronizarFatura } from '../lib/faturas';
 import { Cabecalho } from '../components/Layout';
 import { formatarDocumento } from '../lib/documento';
 import { usePersistente } from '../lib/rascunho';
+import { registrarPagamento } from '../lib/titulos';
 
 const SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
@@ -46,22 +47,17 @@ export default function Pagar() {
     const { l } = baixa, valor = Number(baixa.valor), juros = Number(baixa.juros || 0);
     if (!baixa.conta) { setErro('Informe a conta do pagamento.'); return; }
     if (valor <= 0 || valor > Number(l.valor) + 0.004) { setErro('O valor pago deve ser maior que zero e até ' + brl(l.valor) + '.'); return; }
-    const agora = new Date().toISOString(), conta_id = Number(baixa.conta);
+    const conta_id = Number(baixa.conta);
     const parcial = valor < Number(l.valor) - 0.004;
-    if (parcial && !l.fatura_id) {
-      // pagamento parcial: baixa o valor pago e deixa o restante em aberto
-      const { id, ...resto } = l;
-      const r1 = await supabase.from('lancamentos').insert({ ...resto, valor, status: 'pago', conta_id, data_pagamento: baixa.data, observacao: [l.observacao, 'pagamento parcial'].filter(Boolean).join('; '), atualizado_em: agora });
-      if (r1.error) { setErro(r1.error.message); return; }
-      await supabase.from('lancamentos').update({ valor: Math.round((Number(l.valor) - valor) * 100) / 100, atualizado_em: agora }).eq('id', id);
+    if (!l.fatura_id) {
+      // conta única: pagamento parcial fica no histórico e o saldo continua em aberto
+      const r = await registrarPagamento(l, valor, baixa.data, conta_id);
+      if (r.erro) { setErro(r.erro); return; }
     } else if (l.fatura_id) {
       const { data: g } = await supabase.from('grupos').select('id').eq('nome', 'Pagamento de fatura').single();
       const r = await supabase.from('lancamentos').insert({ tipo: 'saida', conta_id, vencimento: l.vencimento, data_pagamento: baixa.data, grupo_id: g!.id, favorecido: l.favorecido, referencia: l.referencia, valor, status: 'pago', fatura_id: l.fatura_id });
       if (r.error) { setErro(r.error.message); return; }
       await sincronizarFatura(l.fatura_id);
-    } else {
-      const r = await supabase.from('lancamentos').update({ status: 'pago', conta_id, data_pagamento: baixa.data, atualizado_em: agora }).eq('id', l.id);
-      if (r.error) { setErro(r.error.message); return; }
     }
     if (juros > 0) {
       const g = grupos.find(x => x.nome === 'Despesas financeiras') || grupos.find(x => x.nome === 'Juros Bancários');
@@ -84,7 +80,7 @@ export default function Pagar() {
       <div className="card mt">
         <div className="filters">
           <select value={f.per} onChange={e => setF({ ...f, per: e.target.value })}><option value="7">Até 7 dias</option><option value="mes">Até o fim do mês</option><option value="tudo">Tudo em aberto</option></select>
-          <select value={f.conta} onChange={e => setF({ ...f, conta: e.target.value })}><option value="">Todas as contas</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}<option value="sem">Conta a definir</option></select>
+          <select value={f.conta} onChange={e => setF({ ...f, conta: e.target.value })}><option value="">Todas as contas</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}<option value="sem">Conta a definir</option></select>
           <select value={f.grupo} onChange={e => setF({ ...f, grupo: e.target.value })}><option value="">Todos os grupos</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select>
           <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })}><option value="">Todos os status</option>{(['vencido', 'previsto', 'confirmado', 'agendado'] as const).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select>
         </div>
@@ -99,7 +95,7 @@ export default function Pagar() {
                   <td>{diaMes(l.vencimento)}</td><td>{l.favorecido}{l.observacao && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{l.observacao}</div>}</td>
                   <td>{nome(grupos, l.grupo_id)}</td><td>{nome(subgrupos, l.subgrupo_id) || '·'}</td>
                   <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{l.referencia || '·'}</td>
-                  <td className="r">{brl(l.valor)}</td><td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td>
+                  <td className="r">{brl(l.valor)}{l.valor_original != null && <div style={{ fontSize: 11, color: 'var(--muted)' }}>saldo de {brl(l.valor_original)}</div>}</td><td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td>
                   <td className="r" style={{ whiteSpace: 'nowrap' }}>
                     {l.fatura_id && <Link to={'/cartoes?fatura=' + l.fatura_id} className="btn ghost" style={{ padding: '4px 10px', textDecoration: 'none', marginRight: 6 }}>Fatura</Link>}
                     <button className="btn ghost" style={{ padding: '4px 10px' }} onClick={() => { setErro(''); setBaixa({ l, data: hoje, conta: l.conta_id ? String(l.conta_id) : '', valor: String(l.valor), juros: '' }); }}>Baixar</button>

@@ -7,6 +7,9 @@ import { useCadastros, centroPadrao, nomeCentro, OpcoesCentro } from '../lib/use
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { invalidarDicionario } from '../lib/sugestao';
 import SugestaoClassificacao from '../components/SugestaoClassificacao';
+import { EditorRateio, HistoricoPagamentos, linhaVazia, somaRateio } from '../components/Rateio';
+import { DetalheLote } from '../components/Recebimentos';
+import { carregarRateio, gravarRateio, type LinhaRateio } from '../lib/titulos';
 import { Cabecalho } from '../components/Layout';
 import { FormBeneficiario } from '../components/Beneficiarios';
 import { formatarDocumento } from '../lib/documento';
@@ -28,6 +31,9 @@ export default function Lancamentos() {
   const [f, setF] = useState({ tipo: '', conta: '', status: '', busca: '' });
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [form, setForm] = usePersistente<Form | null>('lanc:form', null);
+  const [rateio, setRateio] = usePersistente<LinhaRateio[] | null>('lanc:rateio', null);
+  const [comRateio, setComRateio] = useState<Set<number>>(new Set());
+  const fechar = () => { setForm(null); setRateio(null); };
   const [baixa, setBaixa] = useState<{ data: string; conta: string } | null>(null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
@@ -41,7 +47,15 @@ export default function Lancamentos() {
     const [a, m] = mes.split('-').map(Number);
     const fim = new Date(a, m, 0).getDate();
     supabase.from('lancamentos').select('*').gte('vencimento', mes + '-01').lte('vencimento', `${mes}-${fim}`).order('vencimento').order('id')
-      .then(({ data }) => { setLista((data as Lancamento[]) || []); setSel(new Set()); });
+      .then(async ({ data }) => {
+        const ls = (data as Lancamento[]) || []; setLista(ls); setSel(new Set());
+        const ids = ls.map(l => l.id), com = new Set<number>();
+        for (let i = 0; i < ids.length; i += 200) {
+          const r = await supabase.from('lancamento_rateios').select('lancamento_id').in('lancamento_id', ids.slice(i, i + 200));
+          ((r.data as { lancamento_id: number }[]) || []).forEach(x => com.add(x.lancamento_id));
+        }
+        setComRateio(com);
+      });
   }, [mes, versao]);
 
   const nome = (arr: { id: number; nome: string }[], id: number | null) => arr.find(x => x.id === id)?.nome || '';
@@ -60,19 +74,30 @@ export default function Lancamentos() {
     const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null, centro_custo_id: form.centro_custo_id ? Number(form.centro_custo_id) : null,
       data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null, juros_multa: Number(form.juros_multa || 0), atualizado_em: new Date().toISOString() };
     if (form.status === 'pago' && !dados.conta_id) { setErro('Para marcar como Pago, informe a conta.'); return; }
+    if (rateio) {
+      const validas = rateio.filter(l => l.grupo_id && Number(l.valor) > 0);
+      if (validas.length < 2) { setErro('O rateio precisa de pelo menos duas linhas com grupo e valor. Para uma classificação só, remova o rateio.'); return; }
+      if (Math.abs(somaRateio(validas) - dados.valor) >= 0.005) { setErro(`O rateio soma ${brl(somaRateio(validas))}, mas o lançamento é de ${brl(dados.valor)}.`); return; }
+      const maior = [...validas].sort((a, b) => Number(b.valor) - Number(a.valor))[0];
+      Object.assign(dados, { grupo_id: maior.grupo_id, subgrupo_id: maior.subgrupo_id, centro_custo_id: null });
+    }
     if (exigeBenef && !form.beneficiario_id) { setErro('A partir de 01/01/2027, escolha um fornecedor / beneficiário cadastrado.'); return; }
     if (form.transferencia_id) {
       const par = { valor: dados.valor, vencimento: dados.vencimento, status: dados.status, data_pagamento: dados.data_pagamento, observacao: dados.observacao ?? null, atualizado_em: dados.atualizado_em };
       const r1 = await supabase.from('lancamentos').update({ ...par, conta_id: dados.conta_id }).eq('id', form.id!);
       const r2 = await supabase.from('lancamentos').update(par).eq('transferencia_id', form.transferencia_id).neq('id', form.id!);
       if (r1.error || r2.error) { setErro((r1.error || r2.error)!.message); return; }
-      setForm(null); setVersao(v => v + 1); return;
+      fechar(); setVersao(v => v + 1); return;
     }
     const res = form.id ? await supabase.from('lancamentos').update(dados).eq('id', form.id).select().single() : await supabase.from('lancamentos').insert(dados).select().single();
     if (res.error) { setErro(res.error.message); return; }
+    if (!form.transferencia_id && !form.fatura_id) {
+      const er = await gravarRateio((res.data as Lancamento).id, Number(dados.valor), rateio ?? []);
+      if (er) { setErro('Lançamento salvo, mas o rateio não foi gravado: ' + er); setVersao(v => v + 1); return; }
+    }
     const erroJuros = await sincronizarJuros(res.data as Lancamento);
     if (erroJuros) { setErro('Lançamento salvo, mas a multa/juros não foi lançada: ' + erroJuros); setVersao(v => v + 1); return; }
-    invalidarDicionario(); setForm(null); setVersao(v => v + 1);
+    invalidarDicionario(); fechar(); setVersao(v => v + 1);
   }
 
   /** Multa/juros: lançamento separado em Despesas financeiras (pagamento) ou Receitas financeiras (recebimento) */
@@ -117,11 +142,21 @@ export default function Lancamentos() {
       : await supabase.from('lancamentos').delete().eq('id', form.id);
     if (!error && form.juros_lanc_id) await supabase.from('lancamentos').delete().eq('id', form.juros_lanc_id);
     if (error) { setErro(error.message); return; }
-    setForm(null); setVersao(v => v + 1);
+    fechar(); setVersao(v => v + 1);
   }
 
-  const abrir = (l: Form) => { setErro(''); setBuscaBenef(rotulo(beneficiarios.find(b => b.id === l.beneficiario_id))); setForm(l); };
-  const novo = () => { setErro(''); setBuscaBenef(''); setForm({ tipo: 'saida', vencimento: hoje, status: 'previsto', forma_pagamento: 'Boleto', favorecido: '', valor: undefined }); };
+  const abrir = (l: Form) => {
+    setErro(''); setBuscaBenef(rotulo(beneficiarios.find(b => b.id === l.beneficiario_id))); setForm(l); setRateio(null);
+    if (l.id) carregarRateio(l.id).then(r => r.length && setRateio(r.map(x => ({ grupo_id: x.grupo_id, subgrupo_id: x.subgrupo_id, centro_custo_id: x.centro_custo_id,
+      valor: String(Math.round(Number(x.fracao) * Number(l.valor) * 100) / 100), pct: String(Math.round(Number(x.fracao) * 10000) / 100) }))));
+  };
+  const recarregarForm = async () => {
+    setVersao(v => v + 1);
+    if (!form?.id) return;
+    const { data } = await supabase.from('lancamentos').select('*').eq('id', form.id).single();
+    if (data) setForm({ ...form, ...(data as Lancamento) });
+  };
+  const novo = () => { setErro(''); setBuscaBenef(''); setRateio(null); setForm({ tipo: 'saida', vencimento: hoje, status: 'previsto', forma_pagamento: 'Boleto', favorecido: '', valor: undefined }); };
   const subsDoGrupo = subgrupos.filter(s => s.grupo_id === Number(form?.grupo_id));
   const grupoForm = grupos.find(g => g.id === Number(form?.grupo_id));
   const exigeBenef = !!form && form.tipo === 'saida' && (form.vencimento || '') >= '2027-01-01' && !form.fatura_id && !form.transferencia_id && !['Transferências', 'Pagamento de fatura'].includes(grupoForm?.nome || '') && contas.find(c => c.id === Number(form.conta_id))?.tipo !== 'aplicacao';
@@ -159,7 +194,7 @@ export default function Lancamentos() {
       <div className="card">
         <div className="filters">
           <select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value })}><option value="">Entradas e saídas</option><option value="entrada">Entradas</option><option value="saida">Saídas</option></select>
-          <select value={f.conta} onChange={e => setF({ ...f, conta: e.target.value })}><option value="">Todas as contas</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
+          <select value={f.conta} onChange={e => setF({ ...f, conta: e.target.value })}><option value="">Todas as contas</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
           <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })}><option value="">Todos os status</option>{Object.entries(STATUS_LABEL).map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select>
           <input placeholder="Buscar fornecedor, cliente ou grupo" value={f.busca} onChange={e => setF({ ...f, busca: e.target.value })} />
           <span style={{ flex: 1 }} />
@@ -173,9 +208,9 @@ export default function Lancamentos() {
               <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => abrir({ ...l })}>
                 <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(l.id) : n.delete(l.id); setSel(n); }} /></td>
                 <td>{diaMes(l.vencimento)}</td><td>{l.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}{l.transferencia_id && <div><span className="tag">Transferência</span></div>}</td>
-                <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(grupos, l.grupo_id)}</td><td>{nome(todosSub, l.subgrupo_id) || '·'}</td>
+                <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(grupos, l.grupo_id)}{comRateio.has(l.id) && <div><span className="tag">Rateio</span></div>}</td><td>{nome(todosSub, l.subgrupo_id) || '·'}</td>
                 <td>{l.favorecido}</td><td>{l.referencia || '·'}</td>
-                <td className={'r ' + (l.tipo === 'entrada' ? 'pos' : '')}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}</td>
+                <td className={'r ' + (l.tipo === 'entrada' ? 'pos' : '')}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}{l.titulo_id ? <div><span className="tag">Parcial</span></div> : l.valor_original != null ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.status === 'pago' ? 'última parcela de ' : 'saldo de '}{brl(l.valor_original)}</div> : null}</td>
                 <td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td>
               </tr>); })}</tbody>
           </table>
@@ -196,12 +231,21 @@ export default function Lancamentos() {
               <label>Conta<select value={form.conta_id ?? ''} onChange={e => setForm({ ...form, conta_id: e.target.value ? Number(e.target.value) : null })}><option value="">A definir</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
               <label>Vencimento<DataBR required value={form.vencimento} onChange={e => setForm({ ...form, vencimento: e.target.value })} /></label>
               <label>Valor (R$)<CampoValor min="0.01" required value={form.valor ?? ''} onChange={e => setForm({ ...form, valor: e.target.value as unknown as number })} /></label>
+              {rateio ? <>
+                <div className="full" style={{ display: 'flex', alignItems: 'center', gap: 10 }}><b style={{ color: 'var(--navy)', fontSize: 13 }}>Rateio da classificação</b>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>A soma das linhas precisa fechar o valor do lançamento.</span><span style={{ flex: 1 }} />
+                  <button type="button" className="btn ghost mini" onClick={() => setRateio(null)}>Remover rateio</button></div>
+                <EditorRateio total={Number(form.valor || 0)} linhas={rateio} aoMudar={setRateio} grupos={grupos} subgrupos={subgrupos} centros={centros} tipo={form.tipo || 'saida'} />
+              </> : <>
               <label>Grupo<select required value={form.grupo_id ?? ''} onChange={e => setForm({ ...form, grupo_id: Number(e.target.value), subgrupo_id: null })}><option value="" disabled>Selecione</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
               <label>Subgrupo<select value={form.subgrupo_id ?? ''} onChange={e => setForm({ ...form, subgrupo_id: e.target.value ? Number(e.target.value) : null })}><option value="">·</option>{subsDoGrupo.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
               <label className="span2">Centro de custo<select value={form.centro_custo_id ?? ''} onChange={e => setForm({ ...form, centro_custo_id: e.target.value ? Number(e.target.value) : null })}>
                 <option value="">{'Padrão do plano: ' + (nomeCentro(centros, centroPadrao(grupos, subgrupos, Number(form.grupo_id), Number(form.subgrupo_id))) || 'Geral (sem centro)')}</option><OpcoesCentro centros={centros} /></select></label>
               {!form.transferencia_id && !form.fatura_id && <SugestaoClassificacao tipo={form.tipo || 'saida'} beneficiario_id={form.beneficiario_id} texto={form.favorecido} grupo_id={form.grupo_id} subgrupo_id={form.subgrupo_id}
                 grupos={grupos} subgrupos={subgrupos} aoUsar={o => setForm({ ...form, grupo_id: o.grupo_id, subgrupo_id: o.subgrupo_id, centro_custo_id: o.centro_custo_id ?? form.centro_custo_id ?? null })} />}
+              {!form.transferencia_id && !form.fatura_id && <div className="full" style={{ marginTop: -4 }}><button type="button" className="btn ghost mini" onClick={() => setRateio([
+                { grupo_id: form.grupo_id ? Number(form.grupo_id) : null, subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null, centro_custo_id: form.centro_custo_id ?? null, valor: form.valor ? String(form.valor) : '', pct: form.valor ? '100' : '' }, linhaVazia()])}>Ratear entre classificações</button></div>}
+              </>}
               <label className="span2">{rotuloParte(form.tipo)} cadastrado{exigeBenef ? ' *' : form.tipo === 'saida' ? ' (opcional até 31/12/2026)' : ' (opcional)'}
                 <span style={{ display: 'flex', gap: 6 }}>
                   <input list="lista-benef" style={{ flex: 1 }} placeholder="Digite o nome ou CPF/CNPJ" value={buscaBenef} onChange={e => escolherBenef(e.target.value)} required={exigeBenef} />
@@ -220,11 +264,15 @@ export default function Lancamentos() {
                 onChange={e => setForm({ ...form, juros_multa: e.target.value as unknown as number })} /></label>
               {Number(form.juros_multa || 0) > 0 && <p className="full" style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
                 {brl(Number(form.juros_multa))} serão lançados em <b>{form.tipo === 'saida' ? 'Despesas financeiras' : 'Receitas financeiras'} · Multa/juros por atraso</b>, na data do {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'}{form.status !== 'pago' ? ', quando o status for Pago' : ''}. Total {form.tipo === 'entrada' ? 'recebido' : 'pago'}: {brl(Number(form.valor || 0) + Number(form.juros_multa))}.</p>}
+              {form.id && !form.transferencia_id && !form.fatura_id && !form.titulo_id && (form.valor_original != null || form.status !== 'pago') &&
+                <HistoricoPagamentos titulo={form as Lancamento} contas={contas} aoMudar={recarregarForm} />}
+              {form.id && <DetalheLote lancamentoId={form.id} />}
+              {form.titulo_id && <p className="full proto" style={{ margin: 0 }}>Este é um {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'} parcial. <a href="#" onClick={async e => { e.preventDefault(); const { data } = await supabase.from('lancamentos').select('*').eq('id', form.titulo_id!).single(); if (data) abrir(data as Lancamento); }}>Abrir a conta original</a> para ver o histórico e o saldo.</p>}
               <label className="full">Observação<input value={form.observacao ?? ''} onChange={e => setForm({ ...form, observacao: e.target.value })} /></label>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full">
                 {form.id && <button type="button" className="btn ghost" style={{ marginRight: 'auto', color: 'var(--neg)' }} onClick={excluir}>Excluir</button>}
-                <button type="button" className="btn ghost" onClick={() => setForm(null)}>Cancelar</button><button className="btn">Salvar</button>
+                <button type="button" className="btn ghost" onClick={() => fechar()}>Cancelar</button><button className="btn">Salvar</button>
               </div>
             </form>
           </div>
@@ -242,7 +290,7 @@ export default function Lancamentos() {
           <div className="modal"><h2>Baixar {sel.size} lançamento(s)</h2>
             <form className="form" onSubmit={confirmarBaixa}>
               <label>Data do pagamento<DataBR required value={baixa.data} onChange={e => setBaixa({ ...baixa, data: e.target.value })} /></label>
-              <label>Conta (para itens sem conta)<select value={baixa.conta} onChange={e => setBaixa({ ...baixa, conta: e.target.value })}><option value="">Manter a do lançamento</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
+              <label>Conta (para itens sem conta)<select value={baixa.conta} onChange={e => setBaixa({ ...baixa, conta: e.target.value })}><option value="">Manter a do lançamento</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full"><button type="button" className="btn ghost" onClick={() => setBaixa(null)}>Cancelar</button><button className="btn">Confirmar baixa</button></div>
             </form>

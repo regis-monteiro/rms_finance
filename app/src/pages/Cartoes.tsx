@@ -166,7 +166,7 @@ export default function Cartoes() {
                   return (
                     <tr key={p.id}><td>{diaMes(p.vencimento)}</td><td>{p.data_pagamento ? dataBR(p.data_pagamento) : '·'}</td>
                       <td><select value={p.conta_id ?? ''} onChange={e => trocarConta(p, e.target.value)} style={alerta ? { borderColor: 'var(--gold)', background: 'var(--gold-soft)' } : undefined}>
-                        <option value="">A definir</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
+                        <option value="">A definir</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
                         {alerta && <div style={{ fontSize: 11, color: '#8A6A12', marginTop: 3 }}>Confirme a conta usada</div>}</td>
                       <td className="r">{brl(p.valor)}</td><td><span className={'st ' + classeStatus(p.status)}>{STATUS_LABEL[p.status]}</span></td>
                       <td className="r">{p.status !== 'pago' && p.status !== 'previsto' && <button className="btn ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => baixarPagto(p)}>Marcar pago</button>}</td></tr>);

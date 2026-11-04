@@ -7,6 +7,8 @@ import { brl } from '../lib/format';
 import { useAnos, MESES_LONGOS } from '../lib/analises';
 import { GraficoBarras, MESES_CURTOS } from '../lib/graficos';
 import { Cabecalho } from '../components/Layout';
+import { AbaEmAberto, ModalLancarRecebimentos } from '../components/Recebimentos';
+import { usePersistente } from '../lib/rascunho';
 
 interface Rec { grupo_id: number; mes: number; recebido: number; a_receber: number }
 interface Prev { grupo_id: number; mes: number; valor: number }
@@ -14,7 +16,10 @@ interface Prev { grupo_id: number; mes: number; valor: number }
 export default function Receber() {
   const { usuario } = useAuth();
   const edita = podeEditar(usuario?.perfil);
-  const { grupos } = useCadastros();
+  const { grupos, subgrupos, contas, centros, beneficiarios } = useCadastros();
+  const cad = { grupos, subgrupos, contas, centros, beneficiarios };
+  const [aba, setAba] = usePersistente<'resumo' | 'aberto'>('rec:aba', 'resumo');
+  const [lancar, setLancar] = usePersistente('rec:lancar', false);
   const anos = useAnos();
   const hoje = new Date();
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -62,13 +67,19 @@ export default function Receber() {
 
   return (
     <>
-      <Cabecalho titulo="Contas a receber" sub="Controle sintético por grupo de receita: previsto x recebido">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}</Cabecalho>
+      <Cabecalho titulo="Contas a receber" sub="Previsto x recebido por grupo e contas a receber de cada cliente">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}
+        {edita && <button className="btn gold" onClick={() => setLancar(true)}>Lançar recebimentos</button>}</Cabecalho>
+      <div className="tabs">
+        <button className={aba === 'resumo' ? 'on' : ''} onClick={() => setAba('resumo')}>Resumo por grupo</button>
+        {edita && <button className={aba === 'aberto' ? 'on' : ''} onClick={() => setAba('aberto')}>Em aberto por cliente</button>}
+      </div>
       <div className="filters">
         <select value={mes} onChange={e => setMes(Number(e.target.value))}>{MESES_LONGOS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</select>
         <select value={ano} onChange={e => setAno(Number(e.target.value))}>{anos.map(a => <option key={a}>{a}</option>)}</select>
         <span style={{ flex: 1 }} />
-        {edita && <button className="btn ghost" onClick={() => setGerar({ base: recAnt.length ? 'anterior' : 'media', reajuste: '0' })}>Gerar previsão do ano</button>}
+        {edita && aba === 'resumo' && <button className="btn ghost" onClick={() => setGerar({ base: recAnt.length ? 'anterior' : 'media', reajuste: '0' })}>Gerar previsão do ano</button>}
       </div>
+      {aba === 'aberto' && edita ? <AbaEmAberto cad={cad} ano={ano} mes={mes} aoMudar={() => setVersao(v => v + 1)} /> : <>
       <div className="grid g4">
         <div className="card kpi"><div className="lbl">Previsto no mês</div><div className="val">{brl(tp)}</div></div>
         <div className="card kpi"><div className="lbl">Recebido</div><div className="val pos">{brl(tr)}</div></div>
@@ -91,6 +102,8 @@ export default function Receber() {
         <div className="card"><h3>Ano {ano} <small>previsto x recebido</small></h3><GraficoBarras itens={anual} nomes={['Previsto', 'Recebido']} altura={300} largura={440} /></div>
       </div>
 
+      </>}
+      {lancar && <ModalLancarRecebimentos cad={cad} aoFechar={() => setLancar(false)} aoSalvar={m => { setLancar(false); setMsg(m); setTimeout(() => setMsg(''), 6000); setVersao(v => v + 1); }} />}
       {gerar && (
         <div className="modal-bg open">
           <div className="modal"><h2>Gerar previsão de {ano}</h2>

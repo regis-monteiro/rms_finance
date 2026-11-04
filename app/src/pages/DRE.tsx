@@ -109,7 +109,7 @@ export default function DRE() {
       </Cabecalho>
       <div className="filters">
         <select value={ano} onChange={e => setAno(Number(e.target.value))}>{anos.map(a => <option key={a}>{a}</option>)}</select>
-        <select value={conta ?? ''} onChange={e => setConta(e.target.value ? Number(e.target.value) : null)}><option value="">Todas as contas</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
+        <select value={conta ?? ''} onChange={e => setConta(e.target.value ? Number(e.target.value) : null)}><option value="">Todas as contas</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
         <select value={centro ?? ''} onChange={e => setCentro(e.target.value ? Number(e.target.value) : null)} title="Centro de custo"><option value="">Todos os centros de custo</option><OpcoesCentro centros={centros} /></select>
         <div className="tabs" style={{ margin: 0, border: 0 }}>{([['real', 'Realizado'], ['prev', 'Previsto'], ['comb', 'Realizado + previsto']] as [Modo, string][]).map(([k, t]) => <button key={k} className={modo === k ? 'on' : ''} onClick={() => setModo(k)}>{t}</button>)}</div>
         <span style={{ flex: 1 }} />
