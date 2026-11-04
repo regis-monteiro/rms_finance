@@ -155,7 +155,7 @@ export default function Conciliacao() {
       const { data } = await supabase.auth.getSession();
       const e = await buscarExtratoBanco(integ, ini, fim, data.session?.access_token || '');
       autoRef.current = true;
-      setDec({}); setArquivo({ nome: `${integ === 'inter' ? 'API Inter' : 'API Efí'} · buscado em ${dataBR(hojeISO())}`, ext: e, origem: 'api', buscadoEm: hojeISO(), conta });
+      setDec({}); setArquivo({ nome: `API Inter · buscado em ${dataBR(hojeISO())}`, ext: e, origem: 'api', buscadoEm: hojeISO(), conta });
     } catch (err) { setErro((err as Error).message); }
     setBuscando(false);
   }
@@ -253,7 +253,7 @@ export default function Conciliacao() {
 
   return (
     <>
-      <Cabecalho titulo="Conciliação bancária" sub="Extrato buscado no banco (Inter e Efí) ou importado em OFX, para conferir saldos e lançamentos">
+      <Cabecalho titulo="Conciliação bancária" sub="Extrato buscado no banco (Inter) ou importado em OFX, para conferir saldos e lançamentos">
         {arquivo && <button className="btn ghost" onClick={novaImportacao}>Nova importação</button>}
       </Cabecalho>
       <div className="card">
@@ -266,11 +266,11 @@ export default function Conciliacao() {
           {integ && <>
             <span style={{ fontSize: 13 }}>Período</span><DataBR value={periodo.inicio} onChange={e => setPeriodo({ ...periodo, inicio: e.target.value })} style={{ width: 132 }} />
             <span style={{ fontSize: 13 }}>a</span><DataBR value={periodo.fim} onChange={e => setPeriodo({ ...periodo, fim: e.target.value })} style={{ width: 132 }} />
-            <button className="btn" disabled={buscando || !periodo.inicio || !periodo.fim} onClick={() => buscarBanco()}>{buscando ? 'Buscando no banco…' : `Buscar no ${integ === 'inter' ? 'Inter' : 'Efí'}`}</button>
+            <button className="btn" disabled={buscando || !periodo.inicio || !periodo.fim} onClick={() => buscarBanco()}>{buscando ? 'Buscando no banco…' : 'Buscar no Inter'}</button>
           </>}
           {arquivo && ext && <span style={{ fontSize: 13, color: "var(--muted)" }}>{arquivo.nome} · {dataBR(ext!.inicio)} a {dataBR(ext!.fim)} · {ext!.transacoes.length} transações · entradas {brl(totE)} · saídas {brl(totS)}</span>}
         </div>
-        {!conta && <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0' }}>Escolha a conta. Nas contas integradas (Inter e Efí), o extrato é buscado no banco ao abrir a tela; nas demais, envie o arquivo OFX baixado do internet banking.</p>}
+        {!conta && <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0' }}>Escolha a conta. Na conta integrada (Inter), o extrato é buscado no banco ao abrir a tela; nas demais, envie o arquivo OFX baixado do internet banking.</p>}
         {ext?.avisos?.map((a, i) => <div key={i} className="proto mt">{a}</div>)}
         {erro && <div className="err mt">{erro}</div>}
         {msg && <div className="ok mt">{msg}</div>}
@@ -305,7 +305,7 @@ export default function Conciliacao() {
                   <tr key={p.t.fitid} className={p.sit === 'conciliado' || p.sit === 'associado' ? 'ok-row' : p.sit === 'novo' ? 'warn-row' : ''}>
                     <td className="c">{p.sit !== 'conciliado' && p.sit !== 'associado' && <input type="checkbox" checked={d.marcado} disabled={!ok} onChange={e => mudar(p, 'marcado', e.target.checked)} />}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{dataBR(p.t.data)}</td>
-                    <td style={{ maxWidth: 300 }}>{p.t.provisorio && <span className="tag" title="Pix recebido hoje; o extrato definitivo do Efí chega no dia seguinte">Pix do dia</span>} {p.t.nome || p.t.memo}{p.t.memo && p.t.nome && p.t.memo !== p.t.nome && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.t.memo}</div>}</td>
+                    <td style={{ maxWidth: 300 }}>{p.t.nome || p.t.memo}{p.t.memo && p.t.nome && p.t.memo !== p.t.nome && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.t.memo}</div>}</td>
                     <td className={'r ' + (p.t.tipo === 'entrada' ? 'pos' : '')} style={{ whiteSpace: 'nowrap' }}>{p.t.tipo === 'saida' ? '−' : ''}{brl(p.t.valor)}</td>
                     <td><span className={'st ' + (p.sit === 'conciliado' || p.sit === 'pago' || p.sit === 'associado' ? 'pago' : p.sit === 'aberto' ? 'agen' : 'venc')}>{SIT[p.sit]}</span></td>
                     <td>

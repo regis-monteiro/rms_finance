@@ -50,8 +50,8 @@ export function lerOFX(texto: string): ExtratoOFX {
 /** Texto do extrato usado para descrever e classificar a transação */
 export const descricaoOFX = (t: TransacaoOFX) => [t.nome, t.memo].filter((x, i, a) => x && a.indexOf(x) === i).join(' · ');
 
-/** Busca o extrato direto no banco (Inter ou Efí), pela função do servidor */
-export async function buscarExtratoBanco(banco: 'inter' | 'efi', inicio: string, fim: string, token: string): Promise<ExtratoOFX> {
+/** Busca o extrato direto no banco (Inter), pela função do servidor */
+export async function buscarExtratoBanco(banco: 'inter', inicio: string, fim: string, token: string): Promise<ExtratoOFX> {
   const r = await fetch(`/api/extrato?banco=${banco}&inicio=${inicio}&fim=${fim}`, { headers: { Authorization: 'Bearer ' + token } });
   let j: (ExtratoOFX & { erro?: string }) | null = null;
   try { j = await r.json(); } catch { /* resposta vazia */ }

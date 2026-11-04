@@ -44,6 +44,7 @@ Aplicativo de controle financeiro interno da RMS Organização Contábil.
 - Versão 0.6: relatórios em PDF e Excel no padrão MIV, assinatura no DRE e no Dashboard, números no formato 0,00.
 - Versão 0.7: centros de custo no plano de contas e no DRE, plano de contas editável com reclassificação, conciliação bancária por OFX, sugestão de classificação pelo histórico, IRRF de aplicações lançado só no resgate ou vencimento e rascunho automático dos formulários (script `supabase/010_centros_plano_conciliacao.sql`).
 - Versão 0.8: busca automática do extrato nas APIs do Inter e do Efí (CNAB 240 e Pix do dia), com conciliação automática dos itens idênticos (script `supabase/011_integracao_bancaria.sql`; guia em `docs/integracao_bancaria.md`).
+- Versão 0.9.1: integração por API com o Efí retirada (extratos cobrados); conta Efí conciliada por OFX (script `supabase/013_remover_integracao_efi.sql`).
 - Versão 0.9: associação de várias linhas do extrato a um lançamento do app (e o contrário) na conciliação, com somas iguais; rótulos Fornecedor / Beneficiário nos pagamentos e Cliente / Origem nos recebimentos (script `supabase/012_associacao_conciliacao.sql`).
 
 Configuração: ver `docs/configuracao.md`.

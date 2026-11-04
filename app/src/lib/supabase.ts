@@ -9,7 +9,7 @@ export const supabase = createClient(url || 'http://localhost', key || 'sem-chav
 export type Perfil = 'diretor' | 'financeiro' | 'consulta';
 export type Status = 'previsto' | 'confirmado' | 'agendado' | 'pago';
 
-export interface Conta { id: number; nome: string; tipo: 'corrente' | 'aplicacao' | 'especie'; saldo_inicial: number; data_saldo_inicial: string; ativa: boolean; ordem: number; integracao?: 'inter' | 'efi' | null }
+export interface Conta { id: number; nome: string; tipo: 'corrente' | 'aplicacao' | 'especie'; saldo_inicial: number; data_saldo_inicial: string; ativa: boolean; ordem: number; integracao?: 'inter' | null }
 export interface Grupo { id: number; nome: string; natureza: 'receita' | 'despesa' | 'movimentacao'; linha_dre_id: number | null; restrito: boolean; ativo: boolean; centro_custo_id: number | null }
 export interface Subgrupo { id: number; grupo_id: number; nome: string; ativo?: boolean; linha_dre_id?: number | null; centro_custo_id: number | null }
 export interface CentroCusto { id: number; nome: string; pai_id: number | null; ordem: number; ativo: boolean }
