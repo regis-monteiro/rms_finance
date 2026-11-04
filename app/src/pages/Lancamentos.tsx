@@ -185,23 +185,23 @@ export default function Lancamentos() {
 
       {form && (
         <div className="modal-bg open" onClick={e => e.target === e.currentTarget && setForm(null)}>
-          <div className="modal"><h2>{form.id ? 'Editar lançamento' : 'Novo lançamento'}</h2>
+          <div className="modal" style={{ width: 'min(920px, 96vw)' }}><h2>{form.id ? 'Editar lançamento' : 'Novo lançamento'}</h2>
             {form.transferencia_id && <p className="proto" style={{ marginTop: -6 }}>Este lançamento faz parte de uma transferência entre contas. Valor, data e status são atualizados nas duas pontas; excluir remove as duas.</p>}
-            <form className="form" onSubmit={salvar}>
+            <form className="form form4" onSubmit={salvar}>
               <label>Tipo<select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value as 'entrada' | 'saida' })}><option value="saida">Saída</option><option value="entrada">Entrada</option></select></label>
               <label>Conta<select value={form.conta_id ?? ''} onChange={e => setForm({ ...form, conta_id: e.target.value ? Number(e.target.value) : null })}><option value="">A definir</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
               <label>Vencimento<DataBR required value={form.vencimento} onChange={e => setForm({ ...form, vencimento: e.target.value })} /></label>
               <label>Valor (R$)<CampoValor min="0.01" required value={form.valor ?? ''} onChange={e => setForm({ ...form, valor: e.target.value as unknown as number })} /></label>
               <label>Grupo<select required value={form.grupo_id ?? ''} onChange={e => setForm({ ...form, grupo_id: Number(e.target.value), subgrupo_id: null })}><option value="" disabled>Selecione</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
               <label>Subgrupo<select value={form.subgrupo_id ?? ''} onChange={e => setForm({ ...form, subgrupo_id: e.target.value ? Number(e.target.value) : null })}><option value="">·</option>{subsDoGrupo.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
-              <label className="full">Beneficiário cadastrado{exigeBenef ? ' *' : ' (opcional até 31/12/2026)'}
+              <label className="span2">Beneficiário cadastrado{exigeBenef ? ' *' : ' (opcional até 31/12/2026)'}
                 <span style={{ display: 'flex', gap: 6 }}>
                   <input list="lista-benef" style={{ flex: 1 }} placeholder="Digite o nome ou CPF/CNPJ" value={buscaBenef} onChange={e => escolherBenef(e.target.value)} required={exigeBenef} />
                   <button type="button" className="btn ghost" onClick={() => setNovoBenef(true)}>+ Novo</button>
                 </span>
                 <datalist id="lista-benef">{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotulo(b)} />)}</datalist>
               </label>
-              <label className="full">Favorecido / Pagador<input required value={form.favorecido} onChange={e => setForm({ ...form, favorecido: e.target.value })} /></label>
+              {!form.beneficiario_id && <label className="span2">Favorecido / Pagador<input required value={form.favorecido} onChange={e => setForm({ ...form, favorecido: e.target.value })} /></label>}
               <label>Referência<input placeholder="Parcela ou competência" value={form.referencia ?? ''} onChange={e => setForm({ ...form, referencia: e.target.value })} /></label>
               <label>Documento<input value={form.documento ?? ''} onChange={e => setForm({ ...form, documento: e.target.value })} /></label>
               <label>Status<select value={form.status} onChange={e => { const st = e.target.value as Status; setForm({ ...form, status: st, data_pagamento: st === 'pago' ? (form.data_pagamento || hoje) : null }); }}>{(['previsto', 'confirmado', 'agendado', 'pago'] as Status[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></label>

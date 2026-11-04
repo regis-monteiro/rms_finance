@@ -117,7 +117,7 @@ export default function Rendimentos({ mes }: { mes: string }) {
   async function inativar(a: Aplic) { await supabase.from('aplicacoes').update({ ativo: !a.ativo }).eq('id', a.id); setVersao(v => v + 1); }
 
   const porConta = useMemo(() => contasAF.map(c => ({ c, itens: aplics.filter(a => a.conta_id === c.id && (a.ativo || atual.some(p => p.aplicacao_id === a.id))) })), [contasAF, aplics, atual]);
-  const inp = (id: number, k: keyof Edit, travado: boolean) => <CampoValor value={ed[id]?.[k] ?? ''} disabled={travado} onChange={e => set(id, k, e.target.value)} style={{ width: 118, textAlign: 'right' }} />;
+  const inp = (id: number, k: keyof Edit, travado: boolean, w = 96) => <CampoValor value={ed[id]?.[k] ?? ''} disabled={travado} onChange={e => set(id, k, e.target.value)} style={{ width: w, textAlign: 'right' }} />;
   const pendentes = aplics.filter(a => a.ativo && !atual.find(p => p.aplicacao_id === a.id)?.data_confirmacao && calc(a.id)).length;
 
   return (
@@ -137,8 +137,8 @@ export default function Rendimentos({ mes }: { mes: string }) {
           <div className="card mt" key={c.id} style={{ overflowX: 'auto' }}>
             <h3>{c.nome} <small>Saldo da conta no app: {brl(app)}{tot.l ? ` · soma dos saldos líquidos: ${brl(tot.l)} · diferença ${brl(tot.l - app)}` : ''}</small></h3>
             {itens.length === 0 ? <div className="empty" style={{ padding: 20 }}>Nenhuma aplicação nesta conta.</div> : (
-              <table style={{ minWidth: 1180 }}>
-                <thead><tr><th style={{ minWidth: 190 }}>Aplicação</th><th className="r">Bruto anterior</th><th className="r">Líquido anterior</th><th className="r">Aplicado no mês</th><th className="r">Resgatado no mês</th><th className="r">Bruto atual</th><th className="r">Líquido atual</th><th className="r">Rendimento</th><th className="r">IRRF projetado</th><th>Data</th><th /></tr></thead>
+              <table className="compacta">
+                <thead><tr><th>Aplicação</th><th className="r">Bruto anterior</th><th className="r">Líquido anterior</th><th className="r">Aplicado / resgatado</th><th className="r">Bruto atual</th><th className="r">Líquido atual</th><th className="r">Rendimento</th><th className="r">IRRF projetado</th><th>Data e confirmação</th></tr></thead>
                 <tbody>{itens.map(a => {
                   const p = atual.find(y => y.aplicacao_id === a.id), q = ant.find(y => y.aplicacao_id === a.id), k = calc(a.id), ok = !!p?.data_confirmacao;
                   return (
@@ -147,12 +147,11 @@ export default function Rendimentos({ mes }: { mes: string }) {
                         <td><b>{a.nome}</b>{!q && <div style={{ fontSize: 11, color: '#8A6A12' }}>Primeiro mês: informe o saldo anterior</div>}</td>
                         <td className="r">{q ? brl(q.saldo_bruto) : inp(a.id, 'antBruto', ok)}</td>
                         <td className="r">{q ? brl(q.saldo_liquido) : inp(a.id, 'antLiquido', ok)}</td>
-                        <td className="r">{inp(a.id, 'aporte', ok)}</td><td className="r">{inp(a.id, 'resgate', ok)}</td>
+                        <td className="r"><div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}><span title="Aplicado no mês">+ {inp(a.id, 'aporte', ok, 84)}</span><span title="Resgatado no mês">− {inp(a.id, 'resgate', ok, 84)}</span></div></td>
                         <td className="r">{inp(a.id, 'bruto', ok)}</td><td className="r">{inp(a.id, 'liquido', ok)}</td>
                         <td className={'r ' + ((k?.rend || 0) >= 0 ? 'pos' : 'neg')}>{k ? brl(k.rend) : '·'}</td>
                         <td className="r neg">{k ? brl(k.irrf) : '·'}{k && <div style={{ fontSize: 11, color: 'var(--muted)' }}>acumulado {brl(k.irrfAcum)}</div>}</td>
-                        <td><DataBR value={ed[a.id]?.data || ''} disabled={ok} onChange={e => set(a.id, 'data', e.target.value)} /></td>
-                        <td className="r" style={{ whiteSpace: 'nowrap' }}>
+                        <td style={{ whiteSpace: 'nowrap' }}><DataBR value={ed[a.id]?.data || ''} disabled={ok} onChange={e => set(a.id, 'data', e.target.value)} style={{ width: 140, marginBottom: 4 }} />
                           {ok ? <><span className="st pago">Confirmado {dataBR(p!.data_confirmacao)}</span> <button className="btn ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => desfazer(p!)}>Desfazer</button></>
                             : <><button className="btn ghost" style={{ padding: '3px 9px', fontSize: 12 }} disabled={!ed[a.id]?.bruto || !ed[a.id]?.liquido} onClick={() => salvar(a)}>Salvar</button>{' '}
                               <button className="btn" style={{ padding: '3px 9px', fontSize: 12 }} disabled={!k} onClick={() => confirmar(a)}>Confirmar</button>{' '}
@@ -161,7 +160,7 @@ export default function Rendimentos({ mes }: { mes: string }) {
                       </tr>
                     </Fragment>);
                 })}
-                  <tr style={{ fontWeight: 700, background: '#FBF9F3' }}><td>Total</td><td colSpan={4} /><td className="r">{brl(tot.b)}</td><td className="r">{brl(tot.l)}</td><td className="r">{brl(tot.r)}</td><td className="r">{brl(tot.i)}</td><td colSpan={2} /></tr>
+                  <tr style={{ fontWeight: 700, background: '#FBF9F3' }}><td>Total</td><td colSpan={3} /><td className="r">{brl(tot.b)}</td><td className="r">{brl(tot.l)}</td><td className="r">{brl(tot.r)}</td><td className="r">{brl(tot.i)}</td><td /></tr>
                 </tbody>
               </table>
             )}

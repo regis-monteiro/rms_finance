@@ -116,8 +116,8 @@ export default function DRE() {
       </div>
       {erro && <div className="err">{erro}</div>}
       <div className="card" style={{ overflowX: 'auto' }}>
-        <table style={{ minWidth: 1150 }}>
-          <thead><tr><th style={{ minWidth: 220 }}>Linha / grupo</th>{MESES_CURTOS.map(m => <th key={m} className="r">{m}</th>)}<th className="r">Total</th></tr></thead>
+        <table className="compacta">
+          <thead><tr><th style={{ minWidth: 170 }}>Linha / grupo</th>{MESES_CURTOS.map(m => <th key={m} className="r">{m}</th>)}<th className="r">Total</th></tr></thead>
           <tbody>
             {corpo}
             <tr><td colSpan={14} style={{ paddingTop: 18, fontWeight: 700, color: 'var(--navy)' }}>Movimentações de caixa fora do resultado</td></tr>

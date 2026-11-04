@@ -90,14 +90,14 @@ export function ModalRepeticao({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad; ho
     aoSalvar(linhas.length);
   }
   return (
-    <Modal titulo="Previsões em lote · repetição mensal" largura={680} aoFechar={aoFechar}>
-      <form className="form" onSubmit={salvar}>
+    <Modal titulo="Previsões em lote · repetição mensal" largura={920} aoFechar={aoFechar}>
+      <form className="form form4" onSubmit={salvar}>
         <label>Tipo<select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value })}><option value="saida">Saída</option><option value="entrada">Entrada</option></select></label>
         <label>Conta<select value={f.conta} onChange={e => setF({ ...f, conta: e.target.value })}><option value="">A definir</option>{cad.contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
         <label>Grupo<select required value={f.grupo} onChange={e => setF({ ...f, grupo: e.target.value, sub: '' })}><option value="" disabled>Selecione</option>{cad.grupos.filter(x => !ESPECIAIS.includes(x.nome)).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
         <label>Subgrupo<select value={f.sub} onChange={e => setF({ ...f, sub: e.target.value })}><option value="">·</option>{cad.subgrupos.filter(s => s.grupo_id === Number(f.grupo)).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
-        <label className="full">Beneficiário cadastrado{exige ? ' *' : ''}<CampoBeneficiario cad={cad} valor={f.benef} obrigatorio={exige} aoMudar={b => setF(x => ({ ...x, benef: b?.id ?? null, fav: b ? b.nome : x.fav, grupo: x.grupo || (b?.grupo_id ? String(b.grupo_id) : ''), sub: x.sub || (b?.subgrupo_id ? String(b.subgrupo_id) : '') }))} /></label>
-        <label className="full">Favorecido / Pagador<input required value={f.fav} onChange={e => setF({ ...f, fav: e.target.value })} /></label>
+        <label className="span2">Beneficiário cadastrado{exige ? ' *' : ''}<CampoBeneficiario cad={cad} valor={f.benef} obrigatorio={exige} aoMudar={b => setF(x => ({ ...x, benef: b?.id ?? null, fav: b ? b.nome : x.fav, grupo: x.grupo || (b?.grupo_id ? String(b.grupo_id) : ''), sub: x.sub || (b?.subgrupo_id ? String(b.subgrupo_id) : '') }))} /></label>
+        {!f.benef && <label className="span2">Favorecido / Pagador<input required value={f.fav} onChange={e => setF({ ...f, fav: e.target.value })} /></label>}
         <label>Valor mensal (R$)<CampoValor min="0.01" required value={f.valor} onChange={e => setF({ ...f, valor: e.target.value })} /></label>
         <label>Dia do vencimento<input type="number" min={1} max={31} required value={f.dia} onChange={e => setF({ ...f, dia: e.target.value })} /></label>
         <label>De (mês)<input type="month" required value={f.de} onChange={e => setF({ ...f, de: e.target.value })} /></label>
@@ -105,7 +105,7 @@ export function ModalRepeticao({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad; ho
         <label>Reajuste (%) · opcional<CampoValor value={f.reaj} onChange={e => setF({ ...f, reaj: e.target.value })} /></label>
         <label>A partir de (mês)<input type="month" value={f.mesReaj} onChange={e => setF({ ...f, mesReaj: e.target.value })} disabled={!f.reaj} /></label>
         <label>Status<select value={f.status} onChange={e => setF({ ...f, status: e.target.value as Status })}><option value="previsto">Previsto</option><option value="confirmado">Confirmado</option></select></label>
-        <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20 }}><input type="checkbox" checked={f.ref} onChange={e => setF({ ...f, ref: e.target.checked })} /> Referência = mês/ano</label>
+        <label className="span2" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20 }}><input type="checkbox" checked={f.ref} onChange={e => setF({ ...f, ref: e.target.checked })} /> Referência = mês/ano</label>
         <p className="full" style={{ margin: 0, fontSize: 13 }}>Serão criados <b>{meses.length}</b> lançamentos, total de <b>{brl(total)}</b>. Dia inexistente no mês vai para o último dia.</p>
         {erro && <div className="err full">{erro}</div>}
         <div className="actions full"><button type="button" className="btn ghost" onClick={aoFechar}>Cancelar</button><button className="btn">Criar previsões</button></div>
@@ -179,27 +179,39 @@ export function ModalAlterarLote({ itens, cad, hoje, aoFechar, aoSalvar }: { ite
     if (falhas.length) { setErro(`${ok} alterado(s). Não foi possível alterar ${falhas.length}: ${falhas.slice(0, 3).join(' | ')}`); return; }
     aoSalvar(ok);
   }
-  const marca = (k: keyof typeof usar, t: string) => <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8, fontWeight: 600, color: 'var(--navy)', gridColumn: '1 / -1', marginTop: 6 }}><input type="checkbox" checked={usar[k]} onChange={e => setUsar({ ...usar, [k]: e.target.checked })} /> {t}</label>;
+  const marca = (k: keyof typeof usar, t: string) => <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8, fontWeight: 600, color: 'var(--navy)', alignSelf: 'center', marginTop: 0 }}><input type="checkbox" checked={usar[k]} onChange={e => setUsar({ ...usar, [k]: e.target.checked })} /> {t}</label>;
   return (
-    <Modal titulo={`Alterar ${itens.length} lançamento(s) em lote`} largura={640} aoFechar={aoFechar}>
+    <Modal titulo={`Alterar ${itens.length} lançamento(s) em lote`} largura={820} aoFechar={aoFechar}>
       <form className="form" onSubmit={salvar}>
+        <div className="full lote">
         {marca('status', 'Status')}
         {usar.status && <><label>Novo status<select value={v.status} onChange={e => setV({ ...v, status: e.target.value as Status })}>{(['previsto', 'confirmado', 'agendado', 'pago'] as Status[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></label>
           {v.status === 'pago' ? <label>Data do pagamento<DataBR required value={v.dataPag} onChange={e => setV({ ...v, dataPag: e.target.value })} /></label> : <span />}</>}
+        </div>
+        <div className="full lote">
         {marca('conta', 'Conta')}
-        {usar.conta && <label className="full">Nova conta<select value={v.conta} onChange={e => setV({ ...v, conta: e.target.value })}><option value="">A definir</option>{cad.contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>}
+        {usar.conta && <label className="span2">Nova conta<select value={v.conta} onChange={e => setV({ ...v, conta: e.target.value })}><option value="">A definir</option>{cad.contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>}
+        </div>
+        <div className="full lote">
         {marca('venc', 'Vencimento')}
         {usar.venc && <><label>Como alterar<select value={v.vencModo} onChange={e => setV({ ...v, vencModo: e.target.value })}><option value="data">Nova data para todos</option><option value="dias">Adiar/antecipar em dias</option><option value="meses">Adiar/antecipar em meses</option></select></label>
           {v.vencModo === 'data' ? <label>Nova data<DataBR required value={v.vencData} onChange={e => setV({ ...v, vencData: e.target.value })} /></label>
             : <label>{v.vencModo === 'dias' ? 'Dias' : 'Meses'} (negativo antecipa)<input type="number" required value={v.vencN} onChange={e => setV({ ...v, vencN: e.target.value })} /></label>}</>}
+        </div>
+        <div className="full lote">
         {marca('grupo', 'Grupo e subgrupo')}
         {usar.grupo && <><label>Grupo<select required value={v.grupo} onChange={e => setV({ ...v, grupo: e.target.value, sub: '' })}><option value="" disabled>Selecione</option>{cad.grupos.filter(x => !ESPECIAIS.includes(x.nome)).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
           <label>Subgrupo<select value={v.sub} onChange={e => setV({ ...v, sub: e.target.value })}><option value="">·</option>{cad.subgrupos.filter(s => s.grupo_id === Number(v.grupo)).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label></>}
+        </div>
+        <div className="full lote">
         {marca('benef', 'Beneficiário')}
-        {usar.benef && <label className="full">Beneficiário cadastrado (também atualiza o favorecido)<CampoBeneficiario cad={cad} valor={v.benef} aoMudar={b => setV(x => ({ ...x, benef: b?.id ?? null }))} /></label>}
+        {usar.benef && <label className="span2">Beneficiário cadastrado (também atualiza o favorecido)<CampoBeneficiario cad={cad} valor={v.benef} aoMudar={b => setV(x => ({ ...x, benef: b?.id ?? null }))} /></label>}
+        </div>
+        <div className="full lote">
         {marca('valor', 'Valor')}
         {usar.valor && <><label>Como alterar<select value={v.valorModo} onChange={e => setV({ ...v, valorModo: e.target.value })}><option value="pct">Reajuste em %</option><option value="fixo">Novo valor para todos</option></select></label>
           <label>{v.valorModo === 'pct' ? 'Percentual (negativo reduz)' : 'Valor (R$)'}<CampoValor required value={v.valor} onChange={e => setV({ ...v, valor: e.target.value })} /></label></>}
+        </div>
         {especiais > 0 && <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>{especiais} item(ns) de fatura de cartão ou transferência: só status, conta e vencimento são alterados.</p>}
         {erro && <div className="err full">{erro}</div>}
         <div className="actions full"><button type="button" className="btn ghost" onClick={aoFechar}>Cancelar</button><button className="btn" disabled={processando}>{processando ? 'Aplicando…' : 'Aplicar'}</button></div>

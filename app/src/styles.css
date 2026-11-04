@@ -79,7 +79,8 @@ select,input{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(-
 .modal-bg.open{display:flex}
 .modal{background:var(--paper);border-radius:12px;width:min(560px,100%);padding:22px 24px;max-height:90vh;overflow:auto}
 .modal h2{font-size:20px;margin-bottom:16px}
-.form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.form input:not([type=checkbox]):not([type=radio]),.form select{width:100%;min-width:0}
 .form label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted);font-weight:500}
 .form .full{grid-column:1/-1}
 .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
@@ -109,3 +110,28 @@ a{color:var(--navy)}
 .g5{grid-template-columns:repeat(5,1fr)}
 @media(max-width:1200px){.g5{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:760px){.g5{grid-template-columns:1fr}}
+
+.form4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.form3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.form .span2{grid-column:span 2}
+.form .span3{grid-column:span 3}
+.modal{max-width:96vw;max-height:95vh!important}
+@media(max-width:900px){.form4,.form3{grid-template-columns:1fr 1fr}.form .span3{grid-column:1/-1}}
+@media(max-width:560px){.form4,.form3,.form{grid-template-columns:1fr}.form .span2,.form .span3{grid-column:1/-1}}
+.lote{display:grid;grid-template-columns:180px 1fr 1fr;gap:10px;align-items:end;padding:6px 0;border-bottom:1px solid #F0ECE1}
+.lote .span2{grid-column:span 2}
+@media(max-width:700px){.lote{grid-template-columns:1fr}.lote .span2{grid-column:auto}}
+
+.compacta th,.compacta td{padding:6px 5px;font-size:12px}
+.compacta th{font-size:10.5px;letter-spacing:.3px;white-space:normal;vertical-align:bottom}
+.compacta input,.compacta select{font-size:12px;padding:5px 6px}
+
+/* Telas menores (notebooks de 13"): tabelas mais compactas, sem rolagem lateral */
+@media(max-width:1320px){
+  main{padding:22px 22px 50px}
+  th,td{padding:7px 6px}
+  table{font-size:13px}
+  th{white-space:normal}
+  .compacta th,.compacta td{padding:5px 3px;font-size:11.5px}
+  .compacta input{font-size:11.5px}
+}

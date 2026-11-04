@@ -107,7 +107,7 @@ export default function Comparativos() {
   return (
     <>
       <Cabecalho titulo="Comparativos" sub="Evolução, tendências e variações em R$ e %"><button className="btn" onClick={() => setEmitir(true)}>Emitir PDF / Excel</button></Cabecalho>
-      {emitir && <ModalEmissao titulo={`Comparativos ${rotA} x ${rotB}`} assinatura aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio} />}
+      {emitir && <ModalEmissao titulo={`Comparativos ${rotA} x ${rotB}`} aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio} />}
       <div className="filters">
         <div className="tabs" style={{ margin: 0, border: 0 }}>{([['mes', 'Mês anterior'], ['ano', 'Mesmo mês do ano anterior'], ['acum', 'Acumulado do ano']] as [Tipo, string][]).map(([k, t]) => <button key={k} className={tipo === k ? 'on' : ''} onClick={() => setTipo(k)}>{t}</button>)}</div>
         <span style={{ flex: 1 }} />

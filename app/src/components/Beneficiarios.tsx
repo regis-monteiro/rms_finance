@@ -38,34 +38,33 @@ export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar, aoFecha
   const subs = subgrupos.filter(s => s.grupo_id === Number(f.grupo_id));
   return (
     <div className="modal-bg open" onClick={e => e.target === e.currentTarget && aoFechar()}>
-      <div className="modal" style={{ width: 'min(720px,100%)' }}>
+      <div className="modal" style={{ width: 'min(1080px, 96vw)' }}>
         <h2>{f.id ? 'Editar beneficiário' : 'Novo beneficiário'}</h2>
-        <form className="form" onSubmit={salvar} style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
+        <form className="form" onSubmit={salvar} style={{ gridTemplateColumns: 'repeat(6, minmax(0, 1fr))' }}>
           <label style={{ gridColumn: 'span 2' }}>CPF / CNPJ *<input required value={f.documento || ''} onChange={e => set('documento', formatarDocumento(e.target.value))}
             style={f.documento && soDigitos(f.documento).length >= 11 && !docOk ? { borderColor: 'var(--neg)' } : undefined} />
             {f.documento && soDigitos(f.documento).length >= 11 && <span style={{ color: docOk ? 'var(--pos)' : 'var(--neg)' }}>{docOk ? (tipoPessoa(f.documento) === 'PJ' ? 'CNPJ válido' : 'CPF válido') : 'Documento inválido'}</span>}</label>
-          <label style={{ gridColumn: 'span 2' }}>Nome / Razão social *<input required value={f.nome || ''} onChange={e => set('nome', e.target.value)} /></label>
+          <label style={{ gridColumn: 'span 4' }}>Nome / Razão social *<input required value={f.nome || ''} onChange={e => set('nome', e.target.value)} /></label>
           <label style={{ gridColumn: 'span 2' }}>Nome fantasia<input value={f.nome_fantasia || ''} onChange={e => set('nome_fantasia', e.target.value)} /></label>
-          <label>E-mail<input type="email" value={f.email || ''} onChange={e => set('email', e.target.value)} /></label>
-          <label>Telefone<input value={f.telefone || ''} onChange={e => set('telefone', e.target.value)} /></label>
+          <label style={{ gridColumn: 'span 2' }}>E-mail<input type="email" value={f.email || ''} onChange={e => set('email', e.target.value)} /></label>
+          <label style={{ gridColumn: 'span 2' }}>Telefone<input value={f.telefone || ''} onChange={e => set('telefone', e.target.value)} /></label>
 
           <div className="full" style={{ fontWeight: 600, color: 'var(--navy)', marginTop: 4 }}>Pagamento</div>
-          <label>Tipo de chave PIX<select value={f.pix_tipo || ''} onChange={e => set('pix_tipo', e.target.value || null)}><option value="">·</option>{Object.entries(PIX).map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select></label>
-          <label style={{ gridColumn: 'span 3' }}>Chave PIX<input value={f.pix_chave || ''} onChange={e => set('pix_chave', e.target.value)} placeholder={f.pix_tipo === 'cpf_cnpj' ? 'Pode usar o próprio CPF/CNPJ' : ''} /></label>
-          <label>Banco<input value={f.banco || ''} onChange={e => set('banco', e.target.value)} /></label>
+          <label style={{ gridColumn: 'span 2' }}>Tipo de chave PIX<select value={f.pix_tipo || ''} onChange={e => set('pix_tipo', e.target.value || null)}><option value="">·</option>{Object.entries(PIX).map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select></label>
+          <label style={{ gridColumn: 'span 4' }}>Chave PIX<input value={f.pix_chave || ''} onChange={e => set('pix_chave', e.target.value)} placeholder={f.pix_tipo === 'cpf_cnpj' ? 'Pode usar o próprio CPF/CNPJ' : ''} /></label>
+          <label style={{ gridColumn: 'span 2' }}>Banco<input value={f.banco || ''} onChange={e => set('banco', e.target.value)} /></label>
           <label>Agência<input value={f.agencia || ''} onChange={e => set('agencia', e.target.value)} /></label>
           <label>Conta<input value={f.conta || ''} onChange={e => set('conta', e.target.value)} /></label>
-          <span />
-          <label style={{ gridColumn: 'span 2' }}>Grupo padrão<select value={f.grupo_id ?? ''} onChange={e => setF(x => ({ ...x, grupo_id: e.target.value ? Number(e.target.value) : null, subgrupo_id: null }))}><option value="">·</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
-          <label style={{ gridColumn: 'span 2' }}>Subgrupo padrão<select value={f.subgrupo_id ?? ''} onChange={e => set('subgrupo_id', e.target.value ? Number(e.target.value) : null)}><option value="">·</option>{subs.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
+          <label style={{ gridColumn: 'span 1' }}>Grupo padrão<select value={f.grupo_id ?? ''} onChange={e => setF(x => ({ ...x, grupo_id: e.target.value ? Number(e.target.value) : null, subgrupo_id: null }))}><option value="">·</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
+          <label style={{ gridColumn: 'span 1' }}>Subgrupo padrão<select value={f.subgrupo_id ?? ''} onChange={e => set('subgrupo_id', e.target.value ? Number(e.target.value) : null)}><option value="">·</option>{subs.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
 
           <div className="full" style={{ fontWeight: 600, color: 'var(--navy)', marginTop: 4 }}>Endereço</div>
           <label>CEP<input value={f.cep ? formatarCep(f.cep) : ''} onChange={e => set('cep', e.target.value)} onBlur={e => buscarCep(e.target.value)} /></label>
-          <label style={{ gridColumn: 'span 2' }}>Logradouro<input value={f.logradouro || ''} onChange={e => set('logradouro', e.target.value)} /></label>
+          <label style={{ gridColumn: 'span 3' }}>Logradouro<input value={f.logradouro || ''} onChange={e => set('logradouro', e.target.value)} /></label>
           <label>Número<input value={f.numero || ''} onChange={e => set('numero', e.target.value)} /></label>
           <label>Complemento<input value={f.complemento || ''} onChange={e => set('complemento', e.target.value)} /></label>
-          <label>Bairro<input value={f.bairro || ''} onChange={e => set('bairro', e.target.value)} /></label>
-          <label>Cidade<input value={f.cidade || ''} onChange={e => set('cidade', e.target.value)} /></label>
+          <label style={{ gridColumn: 'span 2' }}>Bairro<input value={f.bairro || ''} onChange={e => set('bairro', e.target.value)} /></label>
+          <label style={{ gridColumn: 'span 3' }}>Cidade<input value={f.cidade || ''} onChange={e => set('cidade', e.target.value)} /></label>
           <label>UF<select value={f.uf || ''} onChange={e => set('uf', e.target.value || null)}><option value="">·</option>{UFS.map(u => <option key={u}>{u}</option>)}</select></label>
           <label className="full">Observações<input value={f.observacao || ''} onChange={e => set('observacao', e.target.value)} /></label>
           {f.id && <label className="full" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={f.ativo ?? true} onChange={e => set('ativo', e.target.checked)} /> Ativo</label>}
