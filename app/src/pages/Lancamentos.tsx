@@ -11,6 +11,8 @@ import SugestaoClassificacao from '../components/SugestaoClassificacao';
 import { EditorRateio, HistoricoPagamentos, linhaVazia, somaRateio } from '../components/Rateio';
 import { DetalheLote } from '../components/Recebimentos';
 import { ModalEditarLote } from '../components/EditarLote';
+import ConfirmarLotes from '../components/ConfirmarLotes';
+import { pendenciasDeLote, temOQueReunir, type Candidato } from '../lib/lotes';
 import { anterior, carregarRateio, desfazerBaixa, gravarRateio, type LinhaRateio } from '../lib/titulos';
 import { Cabecalho } from '../components/Layout';
 import { FormBeneficiario } from '../components/Beneficiarios';
@@ -95,15 +97,15 @@ export default function Lancamentos() {
     (!f.busca || (l.favorecido + nome(grupos, l.grupo_id) + nome(todosSub, l.subgrupo_id)).toLowerCase().includes(f.busca.toLowerCase()))
   ), [lista, f, grupos, subgrupos]);
   const exibicao = useMemo(() => {
-    const out: (Lancamento | { lote: number; data: string; conta: number | null; valor: number; n: number; grupos: number[] })[] = [];
+    const out: (Lancamento | { lote: number; tipo: 'entrada' | 'saida'; data: string; conta: number | null; valor: number; n: number; grupos: number[]; subs: (number | null)[] })[] = [];
     const pos = new Map<number, number>();
     for (const l of linhas) {
       const lt = lotes.get(l.id);
       if (lt == null) { out.push(l); continue; }
       let i = pos.get(lt);
-      if (i == null) { i = out.length; pos.set(lt, i); out.push({ lote: lt, data: l.data_pagamento || l.vencimento, conta: l.conta_id, valor: 0, n: 0, grupos: [] }); }
-      const g = out[i] as { valor: number; n: number; grupos: number[] };
-      g.valor = Math.round((g.valor + Number(l.valor)) * 100) / 100; g.n++; if (!g.grupos.includes(l.grupo_id)) g.grupos.push(l.grupo_id);
+      if (i == null) { i = out.length; pos.set(lt, i); out.push({ lote: lt, tipo: l.tipo, data: l.data_pagamento || l.vencimento, conta: l.conta_id, valor: 0, n: 0, grupos: [], subs: [] }); }
+      const g = out[i] as { valor: number; n: number; grupos: number[]; subs: (number | null)[] };
+      g.valor = Math.round((g.valor + Number(l.valor)) * 100) / 100; g.n++; if (!g.grupos.includes(l.grupo_id)) g.grupos.push(l.grupo_id); if (!g.subs.includes(l.subgrupo_id ?? null)) g.subs.push(l.subgrupo_id ?? null);
     }
     return out;
   }, [linhas, lotes]);
@@ -143,6 +145,14 @@ export default function Lancamentos() {
     const erroJuros = await sincronizarJuros(res.data as Lancamento);
     if (erroJuros) { setErro('Lançamento salvo, mas a multa/juros não foi lançada: ' + erroJuros); setVersao(v => v + 1); return; }
     invalidarDicionario(); fechar(); setVersao(v => v + 1);
+    const antes = form.id ? lista.find(x => x.id === form.id)?.status : null;
+    if (dados.status === 'pago' && antes !== 'pago' && !form.fatura_id) await perguntarLotes([(res.data as Lancamento).id]);
+  }
+
+  /** Baixas do mesmo dia, conta e classificação: oferece reunir no lote do dia */
+  async function perguntarLotes(ids: number[]) {
+    const p = (await pendenciasDeLote(ids)).filter(temOQueReunir);
+    if (p.length) setLotesDia(p);
   }
 
   /** Multa/juros: lançamento separado em Despesas financeiras (pagamento) ou Receitas financeiras (recebimento) */
@@ -178,6 +188,7 @@ export default function Lancamentos() {
       if (error) { setErro(error.message); return; }
     }
     setBaixa(null); setVersao(v => v + 1);
+    await perguntarLotes(itens.map(l => l.id));
   }
 
   async function excluir() {
@@ -191,6 +202,7 @@ export default function Lancamentos() {
   }
 
   const [confirmaDesfazer, setConfirmaDesfazer] = useState(false);
+  const [lotesDia, setLotesDia] = useState<Candidato[] | null>(null);
   const baixadoForm = !!form?.id && lista.find(x => x.id === form.id)?.status === 'pago' && !form.fatura_id;
   async function desfazerForm() {
     if (!form?.id) return;
@@ -278,10 +290,10 @@ export default function Lancamentos() {
             <tbody>{exibicao.map(x => { if ('lote' in x) return (
               <tr key={'lote' + x.lote} className="clicavel" title="Ver e editar o lote" onClick={() => setLoteAberto(x.lote)}>
                 <td className="c" />
-                <td>{diaMes(x.data)}</td><td style={{ color: 'var(--muted)' }}>·</td><td><span className="pos">Entrada</span><div><span className="tag">Lote</span></div></td>
-                <td>{nome(contas, x.conta)}</td><td>{x.grupos.length === 1 ? nome(grupos, x.grupos[0]) : 'Vários'}</td><td>·</td>
-                <td>Recebimento em lote ({x.n} boleto{x.n > 1 ? 's' : ''})</td><td>·</td>
-                <td className="r pos">{brl(x.valor)}</td><td><span className="st pago">Pago</span></td>
+                <td>{diaMes(x.data)}</td><td style={{ color: 'var(--muted)' }}>·</td><td>{x.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}<div><span className="tag">Lote</span></div></td>
+                <td>{nome(contas, x.conta)}</td><td>{x.grupos.length === 1 ? nome(grupos, x.grupos[0]) : 'Vários'}</td><td>{x.subs.length === 1 ? nome(todosSub, x.subs[0]) || '·' : 'Vários'}</td>
+                <td>{x.tipo === 'entrada' ? `Recebimento em lote (${x.n} ${x.n > 1 ? 'itens' : 'item'})` : `Pagamento em lote (${x.n} ${x.n > 1 ? 'itens' : 'item'})`}</td><td>·</td>
+                <td className={'r ' + (x.tipo === 'entrada' ? 'pos' : '')}>{x.tipo === 'saida' ? '−' : ''}{brl(x.valor)}</td><td><span className="st pago">Pago</span></td>
               </tr>);
               const l = x; const s = statusEfetivo(l.status, l.vencimento); return (
               <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => abrir({ ...l })}>
@@ -369,6 +381,7 @@ export default function Lancamentos() {
           <div className="actions"><button className="btn ghost" onClick={() => setModal(null)}>Cancelar</button><button className="btn" onClick={desfazerSelecionados}>Desfazer baixa</button></div>
         </div></div>
       )}
+      {lotesDia && <ConfirmarLotes pendentes={lotesDia} cad={{ contas, grupos, subgrupos: todosSub }} aoConcluir={() => { setLotesDia(null); setVersao(v => v + 1); }} />}
       {loteAberto != null && <ModalEditarLote loteId={loteAberto} cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLoteAberto(null)}
         aoSalvar={m => { setLoteAberto(null); avisar(m); setVersao(v => v + 1); }} />}
       {novoBenef && form && (

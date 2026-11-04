@@ -10,6 +10,8 @@ import { Cabecalho } from '../components/Layout';
 import { formatarDocumento } from '../lib/documento';
 import { usePersistente } from '../lib/rascunho';
 import { registrarPagamento } from '../lib/titulos';
+import { pendenciasDeLote, temOQueReunir, type Candidato } from '../lib/lotes';
+import ConfirmarLotes from '../components/ConfirmarLotes';
 import { ModalLancarContas } from '../components/LancarContas';
 
 const SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -25,6 +27,7 @@ export default function Pagar() {
   const [baixa, setBaixa] = usePersistente<{ l: Lancamento; data: string; conta: string; valor: string; juros: string } | null>('pagar:baixa', null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
+  const [lotesDia, setLotesDia] = useState<Candidato[] | null>(null);
 
   useEffect(() => {
     supabase.from('lancamentos').select('*').eq('tipo', 'saida').neq('status', 'pago').order('vencimento').order('id')
@@ -52,10 +55,12 @@ export default function Pagar() {
     if (valor <= 0 || valor > Number(l.valor) + 0.004) { setErro('O valor pago deve ser maior que zero e até ' + brl(l.valor) + '.'); return; }
     const conta_id = Number(baixa.conta);
     const parcial = valor < Number(l.valor) - 0.004;
+    let idPago: number | null = null;
     if (!l.fatura_id) {
       // conta única: pagamento parcial fica no histórico e o saldo continua em aberto
       const r = await registrarPagamento(l, valor, baixa.data, conta_id);
       if (r.erro) { setErro(r.erro); return; }
+      if (r.id) idPago = r.id;
     } else if (l.fatura_id) {
       const { data: g } = await supabase.from('grupos').select('id').eq('nome', 'Pagamento de fatura').single();
       const r = await supabase.from('lancamentos').insert({ tipo: 'saida', conta_id, vencimento: l.vencimento, data_pagamento: baixa.data, grupo_id: g!.id, favorecido: l.favorecido, referencia: l.referencia, valor, status: 'pago', fatura_id: l.fatura_id });
@@ -69,11 +74,13 @@ export default function Pagar() {
       if (!r.error && !parcial && !l.fatura_id) await supabase.from('lancamentos').update({ juros_multa: juros, juros_lanc_id: r.data.id }).eq('id', l.id);
     }
     setBaixa(null); setVersao(v => v + 1);
+    if (idPago) { const p = (await pendenciasDeLote([idPago])).filter(temOQueReunir); if (p.length) setLotesDia(p); }
   }
 
   return (
     <>
       <Cabecalho titulo="Contas a pagar" sub="Saídas em aberto, uma a uma, incluindo saldos de faturas de cartão">{aviso && <span className="ok">{aviso}</span>}<button className="btn gold" onClick={() => setLote(true)}>+ Novas contas a pagar</button></Cabecalho>
+      {lotesDia && <ConfirmarLotes pendentes={lotesDia} cad={{ contas, grupos, subgrupos }} aoConcluir={m => { setLotesDia(null); if (m) { setAviso(m); setTimeout(() => setAviso(''), 6000); } }} />}
       {lote && <ModalLancarContas tipo="saida" cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLote(false)} aoSalvar={m => { setLote(false); setAviso(m); setTimeout(() => setAviso(''), 6000); setVersao(v => v + 1); }} />}
       <div className="grid g4">
         <div className="card kpi"><div className="lbl">Vencidas</div><div className="val neg">{brl(soma(vencidas))}</div><div className="sub">{vencidas.length} itens</div></div>

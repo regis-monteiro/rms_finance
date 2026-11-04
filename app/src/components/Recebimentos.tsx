@@ -8,6 +8,8 @@ import { formatarDocumento } from '../lib/documento';
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { registrarPagamento } from '../lib/titulos';
 import { invalidarDicionario } from '../lib/sugestao';
+import { pendenciasDeLote, reunirNoLote, temOQueReunir, type Candidato, type TarifaLote } from '../lib/lotes';
+import ConfirmarLotes from './ConfirmarLotes';
 
 export interface Cad { contas: Conta[]; grupos: Grupo[]; subgrupos: Subgrupo[]; centros: CentroCusto[]; beneficiarios: Beneficiario[] }
 export interface Tarifa { houve: boolean; unit: string; benef: string }
@@ -58,6 +60,7 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
   const [msg, setMsg] = useState('');
   const [proc, setProc] = useState(false);
   const [versao, setVersao] = useState(0);
+  const [lotes, setLotes] = useState<{ pend: Candidato[]; tarifa: TarifaLote | null; texto: string } | null>(null);
   const fim = `${ano}-${String(mes).padStart(2, '0')}-${String(new Date(ano, mes, 0).getDate()).padStart(2, '0')}`, ini = `${ano}-${String(mes).padStart(2, '0')}-01`;
 
   useEffect(() => {
@@ -79,20 +82,23 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
     if (baixa.tarifa.houve && exigeBenefTarifa(baixa.data) && !baixa.tarifa.benef) { setErro('A partir de 01/01/2027, informe o banco cadastrado como fornecedor da tarifa.'); return; }
     setProc(true);
     try {
-      const conta = Number(baixa.conta), itens: { beneficiario_id: number | null; nome: string; valor: number; lancamento_id: number | null }[] = [];
+      const conta = Number(baixa.conta), ids: number[] = [];
       for (const l of marcados) {
         const v = Number(baixa.valores[l.id] ?? l.valor);
         const r = await registrarPagamento(l, v, baixa.data, conta);
         if (r.erro) throw new Error(`${l.favorecido}: ${r.erro}`);
-        itens.push({ beneficiario_id: l.beneficiario_id, nome: l.favorecido, valor: r2(v), lancamento_id: r.id });
+        if (r.id) ids.push(r.id);
       }
-      const idTarifa = baixa.tarifa.houve ? await lancarTarifa(cad, itens.length, unit, baixa.data, conta, baixa.tarifa.benef ? Number(baixa.tarifa.benef) : null) : null;
-      const lote = await supabase.from('lotes_recebimento').insert({ tipo: 'baixa', data: baixa.data, conta_id: conta, quantidade: itens.length, tarifa_unitaria: baixa.tarifa.houve ? unit : 0,
-        total: r2(itens.reduce((a, x) => a + x.valor, 0)), lanc_tarifa_id: idTarifa }).select('id').single();
-      if (!lote.error) await supabase.from('lotes_recebimento_itens').insert(itens.map(x => ({ ...x, lote_id: lote.data.id })));
       try { localStorage.setItem('rms-tarifa-boleto', JSON.stringify({ unit: baixa.tarifa.unit, benef: baixa.tarifa.benef })); } catch { /* ignora */ }
-      setMsg(`${itens.length} recebimento(s) baixado(s)${idTarifa ? ` e tarifa de ${brl(r2(itens.length * unit))} lançada` : ''}.`);
-      setBaixa(null); setSel([]); setVersao(v => v + 1); aoMudar();
+      const tarifa: TarifaLote | null = baixa.tarifa.houve ? { unit, criar: (n, d, c) => lancarTarifa(cad, n, unit, d, c, baixa.tarifa.benef ? Number(baixa.tarifa.benef) : null) } : null;
+      const pend = await pendenciasDeLote(ids);
+      const texto = `${ids.length} recebimento(s) baixado(s)${tarifa ? ' com tarifa' : ''}.`;
+      setBaixa(null); setSel([]); setVersao(v => v + 1);
+      if (pend.some(temOQueReunir)) setLotes({ pend, tarifa, texto });
+      else {
+        for (const c of pend) { const e = await reunirNoLote(c, false, tarifa); if (e) throw new Error(e); }
+        setMsg(texto); aoMudar();
+      }
     } catch (err) { setErro((err as Error).message); }
     setProc(false);
   }
@@ -108,6 +114,7 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
 
   return (
     <div className="card">
+      {lotes && <ConfirmarLotes pendentes={lotes.pend} cad={cad} sempreCriar tarifa={lotes.tarifa} aoConcluir={m => { setMsg([lotes.texto, m].filter(Boolean).join(' ')); setLotes(null); aoMudar(); }} />}
       <div className="filters">
         <input placeholder="Buscar cliente" value={busca} onChange={e => setBusca(e.target.value)} style={{ minWidth: 240 }} />
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={vencidas} onChange={e => setVencidas(e.target.checked)} /> Incluir vencidas de meses anteriores</label>
