@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { supabase, type Beneficiario, type Grupo, type Subgrupo } from '../lib/supabase';
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
+import { ImportarCadastro } from './ImportarCadastro';
 import { documentoValido, formatarCep, formatarDocumento, soDigitos, tipoPessoa } from '../lib/documento';
 
 const PIX = { cpf_cnpj: 'CPF/CNPJ', email: 'E-mail', telefone: 'Telefone', aleatoria: 'Chave aleatória' } as Record<string, string>;
@@ -85,6 +86,8 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
   const [busca, setBusca] = useState('');
   const [inativos, setInativos] = useState(false);
   const [edit, setEdit] = usePersistente<Form | null>('cad:benef-edit', null);
+  const [importar, setImportar] = useState(false);
+  const [aviso, setAviso] = useState('');
   const lista = useMemo(() => {
     const q = busca.toLowerCase(), qd = soDigitos(busca);
     return beneficiarios.filter(b => (inativos || b.ativo) && (!busca || b.nome.toLowerCase().includes(q) || (b.nome_fantasia || '').toLowerCase().includes(q) || (qd && b.documento.includes(qd))));
@@ -96,6 +99,8 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
         <input placeholder="Buscar por nome ou CPF/CNPJ" value={busca} onChange={e => setBusca(e.target.value)} style={{ minWidth: 280 }} />
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={inativos} onChange={e => setInativos(e.target.checked)} /> Mostrar inativos</label>
         <span style={{ flex: 1 }} />
+        {aviso && <span className="ok">{aviso}</span>}
+        <button className="btn ghost" onClick={() => setImportar(true)}>Importar planilha</button>
         <button className="btn gold" onClick={() => setEdit({ ativo: true })}>+ Novo fornecedor / cliente</button>
       </div>
       {lista.length === 0 ? <div className="empty" style={{ padding: 30 }}>{beneficiarios.length ? 'Nenhum cadastro encontrado.' : 'Nenhum fornecedor ou cliente cadastrado ainda.'}</div> : (
@@ -110,6 +115,7 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
             </tr>))}</tbody></table>
       )}
       <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>O mesmo cadastro serve como fornecedor / beneficiário nos pagamentos e como cliente / origem nos recebimentos. A partir de 01/01/2027, todo pagamento precisa de um fornecedor / beneficiário cadastrado (exceto faturas de cartão e transferências entre contas da RMS).</p>
+      {importar && <ImportarCadastro existentes={beneficiarios} aoFechar={() => setImportar(false)} aoConcluir={m => { setImportar(false); setAviso(m); setTimeout(() => setAviso(''), 8000); recarregar(); }} />}
       {edit && <FormBeneficiario inicial={edit} grupos={grupos} subgrupos={subgrupos} aoFechar={() => setEdit(null)} aoSalvar={() => { setEdit(null); recarregar(); }} />}
     </>
   );
