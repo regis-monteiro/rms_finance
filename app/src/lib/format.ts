@@ -22,3 +22,7 @@ const CLS: Record<Status | 'vencido', string> = { previsto: 'prev', confirmado: 
 export const statusEfetivo = (status: Status, vencimento: string) =>
   status !== 'pago' && vencimento < hojeISO() ? 'vencido' : status;
 export const classeStatus = (s: Status | 'vencido') => CLS[s];
+
+/** Quem está do outro lado do lançamento: fornecedor nos pagamentos, cliente nos recebimentos */
+export const rotuloParte = (tipo?: string | null) => (tipo === 'entrada' ? 'Cliente / Origem' : 'Fornecedor / Beneficiário');
+export const ROTULO_PARTE = 'Fornecedor / Cliente';

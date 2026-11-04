@@ -9,7 +9,7 @@ const MATRIZ: [string, string, string, string][] = [
   ['Dashboard', 'Completo', 'Completo', 'Sem saldos de aplicação'],
   ['Lançamentos e contas a pagar', 'Edita', 'Edita', 'Não acessa'],
   ['Cartões', 'Edita', 'Edita', 'Não acessa'],
-  ['Fornecedores / beneficiários', 'Edita', 'Edita', 'Não acessa'],
+  ['Fornecedores / Clientes', 'Edita', 'Edita', 'Não acessa'],
   ['Pessoal, pró-labore e sócios', 'Vê detalhe', 'Não vê', 'Não vê'],
   ['Contas, cartões e plano de contas', 'Edita', 'Não acessa', 'Não acessa'],
   ['Usuários e importação', 'Edita', 'Não acessa', 'Não acessa'],

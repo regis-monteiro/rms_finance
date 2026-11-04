@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import CampoValor from './CampoValor';
 import DataBR from './DataBR';
 import { supabase, type Lancamento, type Status, type Conta, type Grupo, type Subgrupo, type Beneficiario } from '../lib/supabase';
-import { brl, dataBR, STATUS_LABEL } from '../lib/format';
+import { brl, dataBR, STATUS_LABEL, rotuloParte, ROTULO_PARTE } from '../lib/format';
 import { formatarDocumento } from '../lib/documento';
 import { usePersistente } from '../lib/rascunho';
 
@@ -80,7 +80,7 @@ export function ModalRepeticao({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad; ho
   async function salvar(e: React.FormEvent) {
     e.preventDefault(); setErro('');
     if (!meses.length) { setErro('Período inválido.'); return; }
-    if (exige && !f.benef) { setErro('A partir de 01/01/2027, escolha um beneficiário cadastrado.'); return; }
+    if (exige && !f.benef) { setErro('A partir de 01/01/2027, escolha um fornecedor / beneficiário cadastrado.'); return; }
     const linhas = meses.map(m => ({
       tipo: f.tipo, conta_id: f.conta ? Number(f.conta) : null, vencimento: somaMeses(`${m}-${f.dia.padStart(2, '0')}`, 0),
       grupo_id: Number(f.grupo), subgrupo_id: f.sub ? Number(f.sub) : null, beneficiario_id: f.benef, favorecido: f.fav,
@@ -97,8 +97,8 @@ export function ModalRepeticao({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad; ho
         <label>Conta<select value={f.conta} onChange={e => setF({ ...f, conta: e.target.value })}><option value="">A definir</option>{cad.contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
         <label>Grupo<select required value={f.grupo} onChange={e => setF({ ...f, grupo: e.target.value, sub: '' })}><option value="" disabled>Selecione</option>{cad.grupos.filter(x => !ESPECIAIS.includes(x.nome)).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
         <label>Subgrupo<select value={f.sub} onChange={e => setF({ ...f, sub: e.target.value })}><option value="">·</option>{cad.subgrupos.filter(s => s.grupo_id === Number(f.grupo)).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
-        <label className="span2">Beneficiário cadastrado{exige ? ' *' : ''}<CampoBeneficiario cad={cad} valor={f.benef} obrigatorio={exige} aoMudar={b => setF(x => ({ ...x, benef: b?.id ?? null, fav: b ? b.nome : x.fav, grupo: x.grupo || (b?.grupo_id ? String(b.grupo_id) : ''), sub: x.sub || (b?.subgrupo_id ? String(b.subgrupo_id) : '') }))} /></label>
-        {!f.benef && <label className="span2">Favorecido / Pagador<input required value={f.fav} onChange={e => setF({ ...f, fav: e.target.value })} /></label>}
+        <label className="span2">{rotuloParte(f.tipo)} cadastrado{exige ? ' *' : ''}<CampoBeneficiario cad={cad} valor={f.benef} obrigatorio={exige} aoMudar={b => setF(x => ({ ...x, benef: b?.id ?? null, fav: b ? b.nome : x.fav, grupo: x.grupo || (b?.grupo_id ? String(b.grupo_id) : ''), sub: x.sub || (b?.subgrupo_id ? String(b.subgrupo_id) : '') }))} /></label>
+        {!f.benef && <label className="span2">{rotuloParte(f.tipo)}<input required value={f.fav} onChange={e => setF({ ...f, fav: e.target.value })} /></label>}
         <label>Valor mensal (R$)<CampoValor min="0.01" required value={f.valor} onChange={e => setF({ ...f, valor: e.target.value })} /></label>
         <label>Dia do vencimento<input type="number" min={1} max={31} required value={f.dia} onChange={e => setF({ ...f, dia: e.target.value })} /></label>
         <label>De (mês)<input type="month" required value={f.de} onChange={e => setF({ ...f, de: e.target.value })} /></label>
@@ -205,8 +205,8 @@ export function ModalAlterarLote({ itens, cad, hoje, aoFechar, aoSalvar }: { ite
           <label>Subgrupo<select value={v.sub} onChange={e => setV({ ...v, sub: e.target.value })}><option value="">·</option>{cad.subgrupos.filter(s => s.grupo_id === Number(v.grupo)).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label></>}
         </div>
         <div className="full lote">
-        {marca('benef', 'Beneficiário')}
-        {usar.benef && <label className="span2">Beneficiário cadastrado (também atualiza o favorecido)<CampoBeneficiario cad={cad} valor={v.benef} aoMudar={b => setV(x => ({ ...x, benef: b?.id ?? null }))} /></label>}
+        {marca('benef', ROTULO_PARTE)}
+        {usar.benef && <label className="span2">Fornecedor / cliente cadastrado (também atualiza o nome no lançamento)<CampoBeneficiario cad={cad} valor={v.benef} aoMudar={b => setV(x => ({ ...x, benef: b?.id ?? null }))} /></label>}
         </div>
         <div className="full lote">
         {marca('valor', 'Valor')}

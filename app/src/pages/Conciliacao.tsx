@@ -2,18 +2,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import DataBR from '../components/DataBR';
 import { Cabecalho } from '../components/Layout';
 import { supabase, type Lancamento } from '../lib/supabase';
-import { brl, dataBR, hojeISO, somaDias } from '../lib/format';
+import { brl, dataBR, hojeISO, somaDias, rotuloParte, ROTULO_PARTE } from '../lib/format';
 import { useCadastros, OpcoesCentro, nomeCentro, centroPadrao } from '../lib/useCadastros';
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { buscarExtratoBanco, decodificar, descricaoOFX, lerOFX, type ExtratoOFX, type TransacaoOFX } from '../lib/ofx';
 import { carregarDicionario, divergente, invalidarDicionario, sugerir, type Sugestao } from '../lib/sugestao';
 import { formatarDocumento } from '../lib/documento';
 
-type Situacao = 'conciliado' | 'pago' | 'aberto' | 'novo';
-interface Par { t: TransacaoOFX; sit: Situacao; l?: Lancamento }
+type Situacao = 'conciliado' | 'associado' | 'pago' | 'aberto' | 'novo';
+interface Assoc { grupo: string; fitids: string[]; lancs: Lancamento[] }
+type DadosApp = { pagos: Lancamento[]; abertos: Lancamento[]; assoc: Assoc[] };
+interface Par { t: TransacaoOFX; sit: Situacao; l?: Lancamento; a?: Assoc }
 interface Dec { marcado: boolean; grupo: string; sub: string; centro: string; benef: string; fav: string; ajustarData: boolean }
 const ESPECIAIS = ['Transferências', 'Pagamento de fatura'];
-const SIT = { conciliado: 'Já conciliado', pago: 'Encontrado (pago)', aberto: 'Em aberto no app', novo: 'Não está no app' } as Record<Situacao, string>;
+const SIT = { conciliado: 'Já conciliado', associado: 'Associado', pago: 'Encontrado (pago)', aberto: 'Em aberto no app', novo: 'Não está no app' } as Record<Situacao, string>;
 const dias = (a: string, b: string) => Math.round((new Date(a + 'T12:00:00').getTime() - new Date(b + 'T12:00:00').getTime()) / 86400000);
 
 async function buscarTodos(q: () => { range: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }> }) {
@@ -27,11 +29,13 @@ async function buscarTodos(q: () => { range: (a: number, b: number) => PromiseLi
 }
 
 /** Casamento do extrato com o app: identificador, depois valor e data próxima */
-function casarExtrato(ext: ExtratoOFX, app: { pagos: Lancamento[]; abertos: Lancamento[] }): Par[] {
-  const usados = new Set<number>();
+function casarExtrato(ext: ExtratoOFX, app: DadosApp): Par[] {
+  const usados = new Set<number>(app.assoc.flatMap(a => a.lancs.map(l => l.id)));
+  const porGrupo = new Map(app.assoc.flatMap(a => a.fitids.map(f => [f, a] as [string, Assoc])));
   const fits = new Set(ext.transacoes.map(t => t.fitid));
   const porFit = new Map(app.pagos.filter(l => l.ofx_fitid).map(l => [l.ofx_fitid!, l]));
   const r: Par[] = ext.transacoes.map(t => {
+    const a = porGrupo.get(t.fitid); if (a) return { t, sit: 'associado' as Situacao, a };
     const l = porFit.get(t.fitid); if (l) { usados.add(l.id); return { t, sit: 'conciliado' as Situacao, l }; }
     return { t, sit: 'novo' as Situacao };
   });
@@ -57,7 +61,8 @@ export default function Conciliacao() {
   const [buscando, setBuscando] = useState(false);
   const autoRef = useRef(false);
   const [dec, setDec] = usePersistente<Record<string, Dec>>('conc:decisoes', {});
-  const [app, setApp] = useState<{ pagos: Lancamento[]; abertos: Lancamento[] }>({ pagos: [], abertos: [] });
+  const [app, setApp] = useState<DadosApp>({ pagos: [], abertos: [], assoc: [] });
+  const [assocAberta, setAssocAberta] = usePersistente<{ ext: string[]; app: number[]; busca: string } | null>('conc:associar', null);
   const [dic, setDic] = useState<Awaited<ReturnType<typeof carregarDicionario>>>([]);
   const [saldoApp, setSaldoApp] = useState<number | null>(null);
   const [filtro, setFiltro] = useState<Situacao | ''>('');
@@ -77,12 +82,56 @@ export default function Conciliacao() {
       buscarTodos(() => supabase.from('lancamentos').select('*').eq('conta_id', c).eq('status', 'pago').gte('data_pagamento', ini).lte('data_pagamento', fim).order('id')),
       buscarTodos(() => supabase.from('lancamentos').select('*').neq('status', 'pago').or(`conta_id.eq.${c},conta_id.is.null`).gte('vencimento', somaDias(ext.inicio, -20)).lte('vencimento', somaDias(ext.fim, 20)).order('id')),
       ext.dataSaldo ? supabase.rpc('saldo_conta_em', { p_conta: c, p_data: ext.dataSaldo }) : Promise.resolve({ data: null }),
-    ]).then(async ([pagos, abertos, s]) => {
-      const dados = { pagos, abertos };
+      carregarAssociacoes(ext.transacoes.map(t => t.fitid)),
+    ]).then(async ([pagos, abertos, s, assoc]) => {
+      const dados = { pagos, abertos, assoc };
       if (autoRef.current) { autoRef.current = false; if (await conciliarExatos(casarExtrato(ext, dados))) return; }
       setApp(dados); setSaldoApp(s.data == null ? null : Number(s.data));
     }).catch(e => setErro((e as Error).message));
   }, [ext, conta, versao]);
+
+  /** Grupos de associação que envolvem linhas deste extrato */
+  async function carregarAssociacoes(fitids: string[]): Promise<Assoc[]> {
+    const ids = new Set<string>();
+    for (let i = 0; i < fitids.length; i += 80) {
+      const { data, error } = await supabase.from('conciliacao_itens').select('grupo_id').in('fitid', fitids.slice(i, i + 80));
+      if (error) { if (/conciliacao_itens/.test(error.message)) return []; throw new Error(error.message); }
+      (data || []).forEach((x: { grupo_id: string }) => ids.add(x.grupo_id));
+    }
+    if (!ids.size) return [];
+    const { data: itens, error } = await supabase.from('conciliacao_itens').select('*').in('grupo_id', [...ids]);
+    if (error) throw new Error(error.message);
+    const lids = (itens || []).filter((x: { lancamento_id: number | null }) => x.lancamento_id).map((x: { lancamento_id: number }) => x.lancamento_id);
+    const { data: lancs } = lids.length ? await supabase.from('lancamentos').select('*').in('id', lids) : { data: [] };
+    return [...ids].map(g => ({ grupo: g, fitids: (itens || []).filter((x: { grupo_id: string; fitid: string | null }) => x.grupo_id === g && x.fitid).map((x: { fitid: string }) => x.fitid),
+      lancs: ((lancs as Lancamento[]) || []).filter(l => (itens || []).some((x: { grupo_id: string; lancamento_id: number | null }) => x.grupo_id === g && x.lancamento_id === l.id)) }));
+  }
+
+  /** Associa linhas do extrato a lançamentos do app quando as somas são iguais; previsões são baixadas na data do extrato */
+  async function associar(linhas: TransacaoOFX[], lancs: Lancamento[]) {
+    setErro(''); setMsg(''); setProc(true);
+    try {
+      const data = linhas.map(t => t.data).sort().pop()!;
+      for (const l of lancs.filter(x => x.status !== 'pago')) {
+        const r = await supabase.from('lancamentos').update({ status: 'pago', data_pagamento: data, conta_id: Number(conta), atualizado_em: new Date().toISOString() }).eq('id', l.id);
+        if (r.error) throw new Error(`${l.favorecido}: ${r.error.message}`);
+      }
+      const g = await supabase.from('conciliacao_grupos').insert({ conta_id: Number(conta) }).select('id').single();
+      if (g.error) throw new Error(g.error.message);
+      const itens = [...linhas.map(t => ({ grupo_id: g.data.id, fitid: t.fitid, data: t.data, valor: t.tipo === 'saida' ? -t.valor : t.valor, descricao: descricaoOFX(t).slice(0, 200) })),
+        ...lancs.map(l => ({ grupo_id: g.data.id, lancamento_id: l.id }))];
+      const r = await supabase.from('conciliacao_itens').insert(itens);
+      if (r.error) { await supabase.from('conciliacao_grupos').delete().eq('id', g.data.id); throw new Error(r.error.message); }
+      setMsg(`Associadas ${linhas.length} linha(s) do extrato a ${lancs.length} lançamento(s) do app.`);
+      setAssocAberta(null); setVersao(v => v + 1);
+    } catch (e) { setErro((e as Error).message); }
+    setProc(false);
+  }
+  async function desassociar(a: Assoc) {
+    const { error } = await supabase.from('conciliacao_grupos').delete().eq('id', a.grupo);
+    if (error) { setErro(error.message); return; }
+    setMsg('Associação desfeita. Os lançamentos baixados pela associação continuam pagos.'); setVersao(v => v + 1);
+  }
 
   /** Itens com mesmo valor e mesma data de um lançamento já pago: conciliados sem pedir confirmação */
   async function conciliarExatos(lista: Par[]) {
@@ -123,7 +172,7 @@ export default function Conciliacao() {
 
   const sobras = useMemo(() => {
     if (!ext) return [];
-    const usados = new Set(pares.filter(p => p.l).map(p => p.l!.id));
+    const usados = new Set([...pares.filter(p => p.l).map(p => p.l!.id), ...app.assoc.flatMap(a => a.lancs.map(l => l.id))]);
     return app.pagos.filter(l => !usados.has(l.id) && (l.data_pagamento || '') >= ext.inicio && (l.data_pagamento || '') <= ext.fim);
   }, [pares, app, ext]);
 
@@ -136,7 +185,7 @@ export default function Conciliacao() {
   /** Decisão de cada linha: a gravada no rascunho ou a sugerida */
   const decisao = (p: Par): Dec => {
     const d = dec[p.t.fitid]; if (d) return d;
-    if (p.sit !== 'novo') return { marcado: p.sit !== 'conciliado', grupo: '', sub: '', centro: '', benef: '', fav: '', ajustarData: true };
+    if (p.sit !== 'novo') return { marcado: p.sit === 'pago' || p.sit === 'aberto', grupo: '', sub: '', centro: '', benef: '', fav: '', ajustarData: true };
     const s = sugestoes.get(p.t.fitid), o = s?.opcoes.find(x => !ESPECIAIS.includes(grupos.find(g => g.id === x.grupo_id)?.nome || ''));
     const b = s?.beneficiario_id ? beneficiarios.find(x => x.id === s.beneficiario_id) : undefined;
     return { marcado: false, grupo: o ? String(o.grupo_id) : '', sub: o?.subgrupo_id ? String(o.subgrupo_id) : '', centro: o?.centro_custo_id ? String(o.centro_custo_id) : '', benef: b ? String(b.id) : '', fav: b?.nome || p.t.nome || p.t.memo, ajustarData: true };
@@ -165,7 +214,7 @@ export default function Conciliacao() {
     const falhas: string[] = [];
     for (const p of pares) {
       const d = decisao(p);
-      if (!d.marcado || p.sit === 'conciliado' || !pronta(p, d)) continue;
+      if (!d.marcado || p.sit === 'conciliado' || p.sit === 'associado' || !pronta(p, d)) continue;
       let r;
       if (p.sit === 'pago') {
         const muda = d.ajustarData && p.l!.data_pagamento !== p.t.data;
@@ -196,7 +245,7 @@ export default function Conciliacao() {
 
   const novaImportacao = () => { setArquivo(null); setDec({}); limparRascunhos('conc:decisoes'); setMsg(''); setErro(''); };
   const cont = (s: Situacao) => pares.filter(p => p.sit === s).length;
-  const aAplicar = pares.filter(p => { const d = decisao(p); return d.marcado && p.sit !== 'conciliado' && pronta(p, d); }).length;
+  const aAplicar = pares.filter(p => { const d = decisao(p); return d.marcado && p.sit !== 'conciliado' && p.sit !== 'associado' && pronta(p, d); }).length;
   const nomeG = (id: number | null | undefined) => grupos.find(g => g.id === id)?.nome || '';
   const nomeS = (id: number | null | undefined) => subgrupos.find(s => s.id === id)?.nome || '';
   const visiveis = pares.filter(p => !filtro || p.sit === filtro);
@@ -234,16 +283,17 @@ export default function Conciliacao() {
             <div className="card kpi"><div className="lbl">Saldo no app na mesma data</div><div className="val">{saldoApp != null ? brl(saldoApp) : '·'}</div><div className="sub">Lançamentos pagos desta conta</div></div>
             <div className="card kpi"><div className="lbl">Diferença</div><div className={'val ' + (ext.saldo != null && saldoApp != null && Math.abs(ext.saldo - saldoApp) >= 0.01 ? 'neg' : 'pos')}>{ext.saldo != null && saldoApp != null ? brl(ext.saldo - saldoApp) : '·'}</div>
               <div className="sub">{ext.saldo != null && saldoApp != null && Math.abs(ext.saldo - saldoApp) < 0.01 ? 'Saldos conferem' : 'Confira os itens abaixo'}</div></div>
-            <div className="card kpi"><div className="lbl">Transações</div><div className="val" style={{ fontSize: 15, lineHeight: 1.6 }}>{cont('conciliado') + cont('pago')} encontradas · {cont('aberto')} em aberto · {cont('novo')} novas</div><div className="sub">{sobras.length} lançamento(s) do app fora do extrato</div></div>
+            <div className="card kpi"><div className="lbl">Transações</div><div className="val" style={{ fontSize: 15, lineHeight: 1.6 }}>{cont('conciliado') + cont('pago') + cont('associado')} encontradas · {cont('aberto')} em aberto · {cont('novo')} novas</div><div className="sub">{sobras.length} lançamento(s) do app fora do extrato</div></div>
           </div>
 
           <div className="card mt" style={{ overflowX: 'auto' }}>
             <div className="filters">
               <div className="tabs" style={{ margin: 0, border: 0 }}>
-                {([['', `Todas (${pares.length})`], ['novo', `Não estão no app (${cont('novo')})`], ['aberto', `Em aberto (${cont('aberto')})`], ['pago', `Encontradas (${cont('pago')})`], ['conciliado', `Já conciliadas (${cont('conciliado')})`]] as [Situacao | '', string][]).map(([k, t]) =>
+                {([['', `Todas (${pares.length})`], ['novo', `Não estão no app (${cont('novo')})`], ['aberto', `Em aberto (${cont('aberto')})`], ['pago', `Encontradas (${cont('pago')})`], ['conciliado', `Já conciliadas (${cont('conciliado')})`], ['associado', `Associadas (${cont('associado')})`]] as [Situacao | '', string][]).map(([k, t]) =>
                   <button key={k} className={filtro === k ? 'on' : ''} onClick={() => setFiltro(k)}>{t}</button>)}
               </div>
               <span style={{ flex: 1 }} />
+              <button className="btn ghost" onClick={() => setAssocAberta({ ext: [], app: [], busca: '' })} title="Junte várias linhas do extrato a um lançamento do app, ou o contrário">Associar lançamentos</button>
               <button className="btn" disabled={!aAplicar || proc} onClick={aplicar}>{proc ? 'Gravando…' : `Aplicar selecionados (${aAplicar})`}</button>
             </div>
             <table className="compacta conc">
@@ -252,13 +302,16 @@ export default function Conciliacao() {
                 const d = decisao(p), s = sugestoes.get(p.t.fitid), ok = pronta(p, d);
                 const subsG = subgrupos.filter(x => x.grupo_id === Number(d.grupo));
                 return (
-                  <tr key={p.t.fitid} className={p.sit === 'conciliado' ? 'ok-row' : p.sit === 'novo' ? 'warn-row' : ''}>
-                    <td className="c">{p.sit !== 'conciliado' && <input type="checkbox" checked={d.marcado} disabled={!ok} onChange={e => mudar(p, 'marcado', e.target.checked)} />}</td>
+                  <tr key={p.t.fitid} className={p.sit === 'conciliado' || p.sit === 'associado' ? 'ok-row' : p.sit === 'novo' ? 'warn-row' : ''}>
+                    <td className="c">{p.sit !== 'conciliado' && p.sit !== 'associado' && <input type="checkbox" checked={d.marcado} disabled={!ok} onChange={e => mudar(p, 'marcado', e.target.checked)} />}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{dataBR(p.t.data)}</td>
                     <td style={{ maxWidth: 300 }}>{p.t.provisorio && <span className="tag" title="Pix recebido hoje; o extrato definitivo do Efí chega no dia seguinte">Pix do dia</span>} {p.t.nome || p.t.memo}{p.t.memo && p.t.nome && p.t.memo !== p.t.nome && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.t.memo}</div>}</td>
                     <td className={'r ' + (p.t.tipo === 'entrada' ? 'pos' : '')} style={{ whiteSpace: 'nowrap' }}>{p.t.tipo === 'saida' ? '−' : ''}{brl(p.t.valor)}</td>
-                    <td><span className={'st ' + (p.sit === 'conciliado' || p.sit === 'pago' ? 'pago' : p.sit === 'aberto' ? 'agen' : 'venc')}>{SIT[p.sit]}</span></td>
+                    <td><span className={'st ' + (p.sit === 'conciliado' || p.sit === 'pago' || p.sit === 'associado' ? 'pago' : p.sit === 'aberto' ? 'agen' : 'venc')}>{SIT[p.sit]}</span></td>
                     <td>
+                      {p.a && <div>{p.a.fitids.length > 1 && <span style={{ color: 'var(--muted)' }}>Grupo de {p.a.fitids.length} linhas do extrato · </span>}
+                        {p.a.lancs.map(l => <div key={l.id}>{l.favorecido} · {nomeG(l.grupo_id)}{l.subgrupo_id ? ' · ' + nomeS(l.subgrupo_id) : ''} · <span className={l.tipo === 'entrada' ? 'pos' : ''}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}</span></div>)}
+                        <button className="btn ghost mini" style={{ marginTop: 3 }} onClick={() => desassociar(p.a!)}>Desfazer associação</button></div>}
                       {p.l && <div>{p.l.favorecido} · {nomeG(p.l.grupo_id)}{p.l.subgrupo_id ? ' · ' + nomeS(p.l.subgrupo_id) : ''}
                         <span style={{ color: 'var(--muted)' }}> · {p.sit === 'aberto' ? `vence ${dataBR(p.l.vencimento)}; será baixado em ${dataBR(p.t.data)}` : `pago em ${dataBR(p.l.data_pagamento)}`}</span>
                         {p.sit === 'pago' && p.l.data_pagamento !== p.t.data && <label style={{ display: 'block', fontSize: 12, color: '#8A6A12' }}><input type="checkbox" checked={d.ajustarData} onChange={e => mudar(p, 'ajustarData', e.target.checked)} /> Ajustar a data de pagamento para {dataBR(p.t.data)}</label>}</div>}
@@ -268,8 +321,8 @@ export default function Conciliacao() {
                           <select value={d.sub} onChange={e => mudar(p, 'sub', e.target.value)}><option value="">Subgrupo</option>{subsG.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select>
                           <select value={d.centro} onChange={e => mudar(p, 'centro', e.target.value)}><option value="">{'Centro: ' + (nomeCentro(centros, centroPadrao(grupos, subgrupos, Number(d.grupo), Number(d.sub))) || 'Geral')}</option><OpcoesCentro centros={centros} /></select>
                           <select value={d.benef} onChange={e => { const b = beneficiarios.find(x => x.id === Number(e.target.value)); setDec({ ...dec, [p.t.fitid]: { ...d, benef: e.target.value, fav: b?.nome || d.fav, marcado: !!d.grupo } }); }} style={{ gridColumn: 'span 2', borderColor: exigeBenef(p, d) && !d.benef ? 'var(--neg)' : undefined }}>
-                            <option value="">{exigeBenef(p, d) ? 'Beneficiário (obrigatório)…' : 'Beneficiário (opcional)'}</option>{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={b.id}>{b.nome} · {formatarDocumento(b.documento)}</option>)}</select>
-                          {!d.benef && <input placeholder="Favorecido / pagador" value={d.fav} onChange={e => mudar(p, 'fav', e.target.value)} />}
+                            <option value="">{rotuloParte(p.t.tipo) + (exigeBenef(p, d) ? ' (obrigatório)…' : ' (opcional)')}</option>{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={b.id}>{b.nome} · {formatarDocumento(b.documento)}</option>)}</select>
+                          {!d.benef && <input placeholder={rotuloParte(p.t.tipo)} value={d.fav} onChange={e => mudar(p, 'fav', e.target.value)} />}
                           {s && s.opcoes.length > 0 && <div style={{ gridColumn: 'span 3', fontSize: 11.5, color: divergente(s) ? '#8A6A12' : 'var(--muted)' }}>
                             {divergente(s) ? 'Lançamentos parecidos com classificações diferentes: ' : 'Sugestão pelo histórico: '}
                             {s.opcoes.slice(0, 3).map((o, i) => <span key={i}>{i > 0 && ' · '}<a href="#" onClick={e => { e.preventDefault(); setDec(x => ({ ...x, [p.t.fitid]: { ...decisao(p), grupo: String(o.grupo_id), sub: o.subgrupo_id ? String(o.subgrupo_id) : '', centro: o.centro_custo_id ? String(o.centro_custo_id) : decisao(p).centro, marcado: true } })); }}>{nomeG(o.grupo_id)}{o.subgrupo_id ? ' · ' + nomeS(o.subgrupo_id) : ''}</a> ({o.n})</span>)}
@@ -289,7 +342,7 @@ export default function Conciliacao() {
           {sobras.length > 0 && (
             <div className="card mt">
               <h3>Lançamentos pagos no app nesta conta que não aparecem no extrato <small>{dataBR(ext.inicio)} a {dataBR(ext.fim)}</small></h3>
-              <table className="compacta"><thead><tr><th>Pagamento</th><th>Favorecido / pagador</th><th>Grupo</th><th className="r">Valor</th></tr></thead>
+              <table className="compacta"><thead><tr><th>Pagamento</th><th>{ROTULO_PARTE}</th><th>Grupo</th><th className="r">Valor</th></tr></thead>
                 <tbody>{(todasSobras ? sobras : sobras.slice(0, 15)).map(l => <tr key={l.id}><td>{dataBR(l.data_pagamento)}</td><td>{l.favorecido}</td><td>{nomeG(l.grupo_id)}{l.subgrupo_id ? ' · ' + nomeS(l.subgrupo_id) : ''}</td>
                   <td className={'r ' + (l.tipo === 'entrada' ? 'pos' : '')}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}</td></tr>)}</tbody></table>
               {sobras.length > 15 && !todasSobras && <button className="btn ghost mini mt" onClick={() => setTodasSobras(true)}>Ver todos ({sobras.length})</button>}
@@ -298,6 +351,55 @@ export default function Conciliacao() {
           )}
         </>
       )}
+      {assocAberta && ext && (() => {
+        const livresExt = pares.filter(p => p.sit !== 'conciliado' && p.sit !== 'associado');
+        const assocIds = new Set(app.assoc.flatMap(a => a.lancs.map(l => l.id)));
+        const conc = new Set(pares.filter(p => p.sit === 'conciliado').map(p => p.l!.id));
+        const q = assocAberta.busca.trim().toLowerCase();
+        const candidatos = [...app.pagos.filter(l => !l.ofx_fitid || l.ofx_fitid.startsWith('efipix:')), ...app.abertos]
+          .filter(l => !assocIds.has(l.id) && !conc.has(l.id) && (!q || (l.favorecido + ' ' + nomeG(l.grupo_id) + ' ' + brl(l.valor)).toLowerCase().includes(q)))
+          .sort((a, b) => (a.data_pagamento || a.vencimento).localeCompare(b.data_pagamento || b.vencimento));
+        const selE = livresExt.filter(p => assocAberta.ext.includes(p.t.fitid)).map(p => p.t);
+        const selA = [...app.pagos, ...app.abertos].filter(l => assocAberta.app.includes(l.id));
+        const totE = selE.reduce((a, t) => a + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+        const totA = selA.reduce((a, l) => a + (l.tipo === 'entrada' ? Number(l.valor) : -Number(l.valor)), 0);
+        const dif = Math.round((totE - totA) * 100) / 100, ok = selE.length > 0 && selA.length > 0 && Math.abs(dif) < 0.005;
+        const alt = (k: 'ext' | 'app', v: string | number) => setAssocAberta({ ...assocAberta, [k]: (assocAberta[k] as (string | number)[]).includes(v) ? (assocAberta[k] as (string | number)[]).filter(x => x !== v) : [...assocAberta[k], v] } as typeof assocAberta);
+        return (
+          <div className="modal-bg open">
+            <div className="modal" style={{ width: 'min(1180px, 96vw)' }}><h2>Associar lançamentos</h2>
+              <p className="proto" style={{ marginTop: -6 }}>Marque uma ou mais linhas do extrato e um ou mais lançamentos do app. A associação só é permitida quando os totais forem iguais. Previsões em aberto são baixadas nesta conta na data do extrato{selE.length > 1 ? ' (a mais recente das linhas marcadas)' : ''}.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div style={{ maxHeight: '52vh', overflow: 'auto' }}>
+                  <h3 style={{ margin: '0 0 6px' }}>Extrato do banco</h3>
+                  <table className="compacta conc"><tbody>{livresExt.map(p => (
+                    <tr key={p.t.fitid} className={assocAberta.ext.includes(p.t.fitid) ? 'ok-row' : ''} style={{ cursor: 'pointer' }} onClick={() => alt('ext', p.t.fitid)}>
+                      <td className="c"><input type="checkbox" readOnly checked={assocAberta.ext.includes(p.t.fitid)} /></td><td style={{ whiteSpace: 'nowrap' }}>{dataBR(p.t.data)}</td>
+                      <td>{p.t.nome || p.t.memo}{p.t.memo && p.t.nome && p.t.memo !== p.t.nome && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.t.memo}</div>}</td>
+                      <td className={'r ' + (p.t.tipo === 'entrada' ? 'pos' : '')} style={{ whiteSpace: 'nowrap' }}>{p.t.tipo === 'saida' ? '−' : ''}{brl(p.t.valor)}</td></tr>))}</tbody></table>
+                </div>
+                <div style={{ maxHeight: '52vh', overflow: 'auto' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}><h3 style={{ margin: 0 }}>Lançamentos do app</h3><span style={{ flex: 1 }} />
+                    <input placeholder="Buscar fornecedor, cliente, grupo ou valor" value={assocAberta.busca} onChange={e => setAssocAberta({ ...assocAberta, busca: e.target.value })} style={{ width: 260 }} /></div>
+                  <table className="compacta conc"><tbody>{candidatos.map(l => (
+                    <tr key={l.id} className={assocAberta.app.includes(l.id) ? 'ok-row' : ''} style={{ cursor: 'pointer' }} onClick={() => alt('app', l.id)}>
+                      <td className="c"><input type="checkbox" readOnly checked={assocAberta.app.includes(l.id)} /></td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{dataBR(l.data_pagamento || l.vencimento)}<div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.status === 'pago' ? 'pago' : 'em aberto'}</div></td>
+                      <td>{l.favorecido}<div style={{ fontSize: 11, color: 'var(--muted)' }}>{nomeG(l.grupo_id)}{l.subgrupo_id ? ' · ' + nomeS(l.subgrupo_id) : ''}</div></td>
+                      <td className={'r ' + (l.tipo === 'entrada' ? 'pos' : '')} style={{ whiteSpace: 'nowrap' }}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}</td></tr>))}</tbody></table>
+                  {!candidatos.length && <div className="empty" style={{ padding: 20 }}>Nenhum lançamento disponível.</div>}
+                </div>
+              </div>
+              <div className="filters" style={{ justifyContent: 'flex-end', gap: 18, margin: '12px 0 0' }}>
+                <span>Extrato ({selE.length}): <b>{brl(totE)}</b></span><span>App ({selA.length}): <b>{brl(totA)}</b></span>
+                <span>Diferença: <b className={Math.abs(dif) < 0.005 ? 'pos' : 'neg'}>{brl(dif)}</b></span>
+              </div>
+              {erro && <div className="err">{erro}</div>}
+              <div className="actions"><button type="button" className="btn ghost" onClick={() => setAssocAberta(null)}>Cancelar</button>
+                <button className="btn" disabled={!ok || proc} title={ok ? '' : 'Os totais precisam ser iguais'} onClick={() => associar(selE, selA)}>{proc ? 'Gravando…' : 'Associar'}</button></div>
+            </div>
+          </div>);
+      })()}
     </>
   );
 }

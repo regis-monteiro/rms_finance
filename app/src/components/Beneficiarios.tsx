@@ -34,7 +34,7 @@ export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, 
     delete (dados as Record<string, unknown>).criado_em;
     const q = f.id ? supabase.from('beneficiarios').update(dados).eq('id', f.id).select().single() : supabase.from('beneficiarios').insert(dados).select().single();
     const { data, error } = await q;
-    if (error) { setErro(error.code === '23505' ? 'Já existe um beneficiário com este CPF/CNPJ.' : error.message); return; }
+    if (error) { setErro(error.code === '23505' ? 'Já existe um cadastro com este CPF/CNPJ.' : error.message); return; }
     aoSalvar(data as Beneficiario);
   }
 
@@ -42,7 +42,7 @@ export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, 
   return (
     <div className="modal-bg open">
       <div className="modal" style={{ width: 'min(1080px, 96vw)' }}>
-        <h2>{f.id ? 'Editar beneficiário' : 'Novo beneficiário'}</h2>
+        <h2>{f.id ? 'Editar fornecedor / cliente' : 'Novo fornecedor / cliente'}</h2>
         <form className="form" onSubmit={salvar} style={{ gridTemplateColumns: 'repeat(6, minmax(0, 1fr))' }}>
           <label style={{ gridColumn: 'span 2' }}>CPF / CNPJ *<input required value={f.documento || ''} onChange={e => set('documento', formatarDocumento(e.target.value))}
             style={f.documento && soDigitos(f.documento).length >= 11 && !docOk ? { borderColor: 'var(--neg)' } : undefined} />
@@ -96,9 +96,9 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
         <input placeholder="Buscar por nome ou CPF/CNPJ" value={busca} onChange={e => setBusca(e.target.value)} style={{ minWidth: 280 }} />
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={inativos} onChange={e => setInativos(e.target.checked)} /> Mostrar inativos</label>
         <span style={{ flex: 1 }} />
-        <button className="btn gold" onClick={() => setEdit({ ativo: true })}>+ Novo beneficiário</button>
+        <button className="btn gold" onClick={() => setEdit({ ativo: true })}>+ Novo fornecedor / cliente</button>
       </div>
-      {lista.length === 0 ? <div className="empty" style={{ padding: 30 }}>{beneficiarios.length ? 'Nenhum beneficiário encontrado.' : 'Nenhum beneficiário cadastrado ainda.'}</div> : (
+      {lista.length === 0 ? <div className="empty" style={{ padding: 30 }}>{beneficiarios.length ? 'Nenhum cadastro encontrado.' : 'Nenhum fornecedor ou cliente cadastrado ainda.'}</div> : (
         <table><thead><tr><th>Nome</th><th>CPF / CNPJ</th><th>Chave PIX</th><th>Grupo padrão</th><th>Contato</th><th>Situação</th></tr></thead>
           <tbody>{lista.map(b => (
             <tr key={b.id} style={{ cursor: 'pointer' }} onClick={() => setEdit(b)}>
@@ -109,7 +109,7 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
               <td><span className={'st ' + (b.ativo ? 'pago' : 'venc')}>{b.ativo ? 'Ativo' : 'Inativo'}</span></td>
             </tr>))}</tbody></table>
       )}
-      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>A partir de 01/01/2027, todo pagamento precisa de um beneficiário cadastrado (exceto faturas de cartão e transferências entre contas da RMS).</p>
+      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>O mesmo cadastro serve como fornecedor / beneficiário nos pagamentos e como cliente / origem nos recebimentos. A partir de 01/01/2027, todo pagamento precisa de um fornecedor / beneficiário cadastrado (exceto faturas de cartão e transferências entre contas da RMS).</p>
       {edit && <FormBeneficiario inicial={edit} grupos={grupos} subgrupos={subgrupos} aoFechar={() => setEdit(null)} aoSalvar={() => { setEdit(null); recarregar(); }} />}
     </>
   );

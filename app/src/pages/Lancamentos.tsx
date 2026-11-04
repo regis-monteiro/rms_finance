@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { supabase, type Lancamento, type Status } from '../lib/supabase';
-import { brl, dataBR, diaMes, hojeISO, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
+import { brl, dataBR, diaMes, hojeISO, statusEfetivo, classeStatus, STATUS_LABEL, rotuloParte, ROTULO_PARTE } from '../lib/format';
 import { useCadastros, centroPadrao, nomeCentro, OpcoesCentro } from '../lib/useCadastros';
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { invalidarDicionario } from '../lib/sugestao';
@@ -60,7 +60,7 @@ export default function Lancamentos() {
     const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null, centro_custo_id: form.centro_custo_id ? Number(form.centro_custo_id) : null,
       data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null, juros_multa: Number(form.juros_multa || 0), atualizado_em: new Date().toISOString() };
     if (form.status === 'pago' && !dados.conta_id) { setErro('Para marcar como Pago, informe a conta.'); return; }
-    if (exigeBenef && !form.beneficiario_id) { setErro('A partir de 01/01/2027, escolha um beneficiário cadastrado.'); return; }
+    if (exigeBenef && !form.beneficiario_id) { setErro('A partir de 01/01/2027, escolha um fornecedor / beneficiário cadastrado.'); return; }
     if (form.transferencia_id) {
       const par = { valor: dados.valor, vencimento: dados.vencimento, status: dados.status, data_pagamento: dados.data_pagamento, observacao: dados.observacao ?? null, atualizado_em: dados.atualizado_em };
       const r1 = await supabase.from('lancamentos').update({ ...par, conta_id: dados.conta_id }).eq('id', form.id!);
@@ -161,14 +161,14 @@ export default function Lancamentos() {
           <select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value })}><option value="">Entradas e saídas</option><option value="entrada">Entradas</option><option value="saida">Saídas</option></select>
           <select value={f.conta} onChange={e => setF({ ...f, conta: e.target.value })}><option value="">Todas as contas</option>{contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
           <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })}><option value="">Todos os status</option>{Object.entries(STATUS_LABEL).map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select>
-          <input placeholder="Buscar favorecido ou grupo" value={f.busca} onChange={e => setF({ ...f, busca: e.target.value })} />
+          <input placeholder="Buscar fornecedor, cliente ou grupo" value={f.busca} onChange={e => setF({ ...f, busca: e.target.value })} />
           <span style={{ flex: 1 }} />
           <button className="btn gold" onClick={novo}>+ Novo lançamento</button>
         </div>
         {linhas.length === 0 ? <div className="empty">Nenhum lançamento neste mês.</div> : (
           <table>
             <thead><tr><th className="c"><input type="checkbox" checked={linhas.length > 0 && linhas.every(l => sel.has(l.id))} onChange={e => setSel(e.target.checked ? new Set(linhas.map(l => l.id)) : new Set())} /></th>
-              <th>Vencimento</th><th>Tipo</th><th>Conta</th><th>Grupo</th><th>Subgrupo</th><th>Favorecido / Pagador</th><th>Ref.</th><th className="r">Valor</th><th>Status</th></tr></thead>
+              <th>Vencimento</th><th>Tipo</th><th>Conta</th><th>Grupo</th><th>Subgrupo</th><th>{ROTULO_PARTE}</th><th>Ref.</th><th className="r">Valor</th><th>Status</th></tr></thead>
             <tbody>{linhas.map(l => { const s = statusEfetivo(l.status, l.vencimento); return (
               <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => abrir({ ...l })}>
                 <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(l.id) : n.delete(l.id); setSel(n); }} /></td>
@@ -202,14 +202,14 @@ export default function Lancamentos() {
                 <option value="">{'Padrão do plano: ' + (nomeCentro(centros, centroPadrao(grupos, subgrupos, Number(form.grupo_id), Number(form.subgrupo_id))) || 'Geral (sem centro)')}</option><OpcoesCentro centros={centros} /></select></label>
               {!form.transferencia_id && !form.fatura_id && <SugestaoClassificacao tipo={form.tipo || 'saida'} beneficiario_id={form.beneficiario_id} texto={form.favorecido} grupo_id={form.grupo_id} subgrupo_id={form.subgrupo_id}
                 grupos={grupos} subgrupos={subgrupos} aoUsar={o => setForm({ ...form, grupo_id: o.grupo_id, subgrupo_id: o.subgrupo_id, centro_custo_id: o.centro_custo_id ?? form.centro_custo_id ?? null })} />}
-              <label className="span2">Beneficiário cadastrado{exigeBenef ? ' *' : ' (opcional até 31/12/2026)'}
+              <label className="span2">{rotuloParte(form.tipo)} cadastrado{exigeBenef ? ' *' : form.tipo === 'saida' ? ' (opcional até 31/12/2026)' : ' (opcional)'}
                 <span style={{ display: 'flex', gap: 6 }}>
                   <input list="lista-benef" style={{ flex: 1 }} placeholder="Digite o nome ou CPF/CNPJ" value={buscaBenef} onChange={e => escolherBenef(e.target.value)} required={exigeBenef} />
                   <button type="button" className="btn ghost" onClick={() => setNovoBenef(true)}>+ Novo</button>
                 </span>
                 <datalist id="lista-benef">{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotulo(b)} />)}</datalist>
               </label>
-              {!form.beneficiario_id && <label className="span2">Favorecido / Pagador<input required value={form.favorecido} onChange={e => setForm({ ...form, favorecido: e.target.value })} /></label>}
+              {!form.beneficiario_id && <label className="span2">{rotuloParte(form.tipo)}<input required value={form.favorecido} onChange={e => setForm({ ...form, favorecido: e.target.value })} /></label>}
               <label>Referência<input placeholder="Parcela ou competência" value={form.referencia ?? ''} onChange={e => setForm({ ...form, referencia: e.target.value })} /></label>
               <label>Documento<input value={form.documento ?? ''} onChange={e => setForm({ ...form, documento: e.target.value })} /></label>
               <label>Status<select value={form.status} onChange={e => { const st = e.target.value as Status; setForm({ ...form, status: st, data_pagamento: st === 'pago' ? (form.data_pagamento || hoje) : null }); }}>{(['previsto', 'confirmado', 'agendado', 'pago'] as Status[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></label>

@@ -63,7 +63,7 @@ export default function Dashboard() {
         linhas: [...MESES_LONGOS.slice(0, m + 1).map((n, i) => ({ m: n, r: rec[i], l: res[i] })), { m: 'Acumulado', r: rec.reduce((a, b) => a + b, 0), l: acum, _estilo: 'total' as const }] as Linha[] },
     ];
     if (podeEditar(usuario?.perfil)) {
-      secoes.push({ titulo: 'Contas a pagar até o fim do mês', colunas: [{ titulo: 'Vencimento', chave: 'd', tipo: 'data' as const }, { titulo: 'Favorecido', chave: 'f' }, { titulo: 'Grupo', chave: 'g' }, { titulo: 'Conta', chave: 'c' }, { titulo: 'Status', chave: 's' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' as const }],
+      secoes.push({ titulo: 'Contas a pagar até o fim do mês', colunas: [{ titulo: 'Vencimento', chave: 'd', tipo: 'data' as const }, { titulo: 'Fornecedor / Beneficiário', chave: 'f' }, { titulo: 'Grupo', chave: 'g' }, { titulo: 'Conta', chave: 'c' }, { titulo: 'Status', chave: 's' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' as const }],
         linhas: [...abertos.map(l => ({ d: l.vencimento, f: l.favorecido, g: nomeGrupo(l.grupo_id), c: nomeConta(l.conta_id), s: STATUS_LABEL[statusEfetivo(l.status, l.vencimento)], v: Number(l.valor) })),
           { f: 'Vencidas', v: soma(vencidos), _estilo: 'sub' as const }, { f: 'Próximos 7 dias', v: soma(em7), _estilo: 'sub' as const }, { f: 'Restante do mês', v: soma(resto), _estilo: 'sub' as const }, { f: 'Total', v: soma(abertos), _estilo: 'total' as const }] as Linha[] });
       if (faturas.length) secoes.push({ titulo: 'Faturas de cartão em aberto', colunas: [{ titulo: 'Cartão', chave: 'c' }, { titulo: 'Vencimento', chave: 'd', tipo: 'data' as const }, { titulo: 'Em aberto', chave: 'v', tipo: 'moeda' as const }],
@@ -113,7 +113,7 @@ export default function Dashboard() {
             </div>
             {abertos.length === 0 ? <div className="empty" style={{ padding: 24 }}>Nenhuma conta em aberto até o fim do mês.</div> : (
               <table>
-                <thead><tr><th>Vencimento</th><th>Favorecido</th><th>Grupo</th><th>Conta</th><th className="r">Valor</th><th>Status</th></tr></thead>
+                <thead><tr><th>Vencimento</th><th>Fornecedor / Beneficiário</th><th>Grupo</th><th>Conta</th><th className="r">Valor</th><th>Status</th></tr></thead>
                 <tbody>{abertos.slice(0, 10).map(l => { const s = statusEfetivo(l.status, l.vencimento); return (
                   <tr key={l.id}><td>{diaMes(l.vencimento)}</td><td>{l.favorecido}</td><td>{nomeGrupo(l.grupo_id)}</td><td>{nomeConta(l.conta_id)}</td><td className="r">{brl(l.valor)}</td><td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td></tr>
                 ); })}</tbody>

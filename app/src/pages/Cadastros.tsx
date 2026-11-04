@@ -26,10 +26,10 @@ export default function Cadastros() {
   }
   return (
     <>
-      <Cabecalho titulo="Cadastros" sub="Beneficiários, contas, cartões e plano de contas">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}</Cabecalho>
+      <Cabecalho titulo="Cadastros" sub="Fornecedores, clientes, contas, cartões e plano de contas">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}</Cabecalho>
       <div className="card">
         <div className="tabs">
-          {([['beneficiarios', 'Fornecedores / beneficiários'], ...(diretor ? [['contas', 'Contas'], ['cartoes', 'Cartões'], ['grupos', 'Plano de contas'], ['signatarios', 'Signatários']] : [])] as [typeof aba, string][]).map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} onClick={() => setAba(k)}>{t}</button>)}
+          {([['beneficiarios', 'Fornecedores / Clientes'], ...(diretor ? [['contas', 'Contas'], ['cartoes', 'Cartões'], ['grupos', 'Plano de contas'], ['signatarios', 'Signatários']] : [])] as [typeof aba, string][]).map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} onClick={() => setAba(k)}>{t}</button>)}
         </div>
 
         {aba === 'beneficiarios' && <AbaBeneficiarios beneficiarios={beneficiarios} grupos={grupos} subgrupos={subgrupos} recarregar={recarregar} />}

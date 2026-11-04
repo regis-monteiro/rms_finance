@@ -90,7 +90,7 @@ export default function Pagar() {
         </div>
         {dias.length === 0 ? <div className="empty">Nada em aberto neste filtro.</div> : (
           <table>
-            <thead><tr><th>Vencimento</th><th>Favorecido</th><th>Grupo</th><th>Subgrupo</th><th>Conta</th><th>Ref.</th><th className="r">Valor</th><th>Status</th><th className="r">Ação</th></tr></thead>
+            <thead><tr><th>Vencimento</th><th>Fornecedor / Beneficiário</th><th>Grupo</th><th>Subgrupo</th><th>Conta</th><th>Ref.</th><th className="r">Valor</th><th>Status</th><th className="r">Ação</th></tr></thead>
             <tbody>{dias.map(([d, ls]) => [
               <tr key={d}><td colSpan={9} style={{ background: '#FBF9F3', fontWeight: 600, fontSize: 12.5, color: 'var(--navy)' }}>
                 {dataBR(d)} · {SEMANA[new Date(d + 'T12:00:00').getDay()]}<span style={{ float: 'right' }}>{brl(soma(ls))}</span></td></tr>,
