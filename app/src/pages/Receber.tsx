@@ -8,6 +8,7 @@ import { useAnos, MESES_LONGOS } from '../lib/analises';
 import { GraficoBarras, MESES_CURTOS } from '../lib/graficos';
 import { Cabecalho } from '../components/Layout';
 import { AbaEmAberto, ModalLancarRecebimentos } from '../components/Recebimentos';
+import { ImportarBoletos } from '../components/ImportarBoletos';
 import { usePersistente } from '../lib/rascunho';
 
 interface Rec { grupo_id: number; mes: number; recebido: number; a_receber: number }
@@ -20,6 +21,7 @@ export default function Receber() {
   const cad = { grupos, subgrupos, contas, centros, beneficiarios };
   const [aba, setAba] = usePersistente<'resumo' | 'aberto'>('rec:aba', 'resumo');
   const [lancar, setLancar] = usePersistente('rec:lancar', false);
+  const [importar, setImportar] = useState(false);
   const anos = useAnos();
   const hoje = new Date();
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -68,6 +70,7 @@ export default function Receber() {
   return (
     <>
       <Cabecalho titulo="Contas a receber" sub="Previsto x recebido por grupo e contas a receber de cada cliente">{msg && <span className={msg.startsWith('Erro') ? 'err' : 'ok'}>{msg}</span>}
+        {edita && <button className="btn ghost" onClick={() => setImportar(true)}>Importar boletos</button>}
         {edita && <button className="btn gold" onClick={() => setLancar(true)}>Lançar recebimentos</button>}</Cabecalho>
       <div className="tabs">
         <button className={aba === 'resumo' ? 'on' : ''} onClick={() => setAba('resumo')}>Resumo por grupo</button>
@@ -103,6 +106,7 @@ export default function Receber() {
       </div>
 
       </>}
+      {importar && <ImportarBoletos cad={cad} aoFechar={() => setImportar(false)} aoConcluir={m => { setImportar(false); setMsg(m); setTimeout(() => setMsg(''), 8000); setAba('aberto'); setVersao(v => v + 1); }} />}
       {lancar && <ModalLancarRecebimentos cad={cad} aoFechar={() => setLancar(false)} aoSalvar={m => { setLancar(false); setMsg(m); setTimeout(() => setMsg(''), 6000); setVersao(v => v + 1); }} />}
       {gerar && (
         <div className="modal-bg open">
