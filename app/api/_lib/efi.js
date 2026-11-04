@@ -24,8 +24,14 @@ async function token(c, url) {
   const r = await requisitar(url, { metodo: 'POST', corpo: { grant_type: 'client_credentials' }, cert: c.cert, key: c.key,
     cabecalhos: { 'Content-Type': 'application/json', Authorization: 'Basic ' + Buffer.from(`${c.id}:${c.segredo}`).toString('base64') } });
   if (r.status !== 200 || !r.json?.access_token) throw new ErroBanco('O Efí recusou as credenciais: ' + detalhe(r));
+  escopos = String(r.json.scope || '');
   return r.json.access_token;
 }
+let escopos = '';
+/** Mensagem clara quando a aplicação do Efí não tem o escopo necessário */
+const semEscopo = (r, falta) => (/scope/i.test(detalhe(r)) || r.status === 403
+  ? ` Falta liberar o escopo "${falta}" na aplicação do Efí (ambiente de Produção).${escopos ? ' Escopos liberados hoje: ' + escopos + '.' : ''}`
+  : '');
 
 const lista = (j, k) => (Array.isArray(j) ? j : Array.isArray(j?.[k]) ? j[k] : Array.isArray(j?.data) ? j.data : []);
 const diaDe = (s) => { const m = String(s || '').match(/(\d{4})-?(\d{2})-?(\d{2})/); return m ? `${m[1]}-${m[2]}-${m[3]}` : ''; };
@@ -39,10 +45,10 @@ export async function extratoEfi(inicio, fim, hoje) {
   const ag = await requisitar(EXT() + '/v1/extrato-cnab/agendamentos', opt);
   if (ag.status === 200 && !lista(ag.json, 'agendamentos').length) {
     const r = await requisitar(EXT() + '/v1/extrato-cnab/agendar', { ...opt, metodo: 'POST', corpo: { periodicidade: 'diario', envia_email: false, comprimir_arquivos: false }, cabecalhos: { ...opt.cabecalhos, 'Content-Type': 'application/json' } });
-    avisos.push(r.status < 300 ? 'Geração diária do extrato ativada no Efí: o primeiro arquivo fica disponível amanhã.' : 'Não foi possível ativar a geração diária do extrato no Efí: ' + detalhe(r));
+    avisos.push(r.status < 300 ? 'Geração diária do extrato ativada no Efí: o primeiro arquivo fica disponível amanhã.' : 'Não foi possível ativar a geração diária do extrato no Efí: ' + detalhe(r) + '.' + semEscopo(r, 'API Extratos: criar e revisar recorrências (gn.cnab-statement.statement.write)'));
   }
   const arq = await requisitar(EXT() + '/v1/extrato-cnab/arquivos', opt);
-  if (arq.status !== 200) throw new ErroBanco('Erro ao listar os extratos do Efí: ' + detalhe(arq));
+  if (arq.status !== 200) throw new ErroBanco('Erro ao listar os extratos do Efí: ' + detalhe(arq) + '.' + semEscopo(arq, 'API Extratos: consultar arquivos e recorrências (gn.cnab-statement.statement.read)'));
   const arquivos = lista(arq.json, 'arquivos').filter(a => { const d = diaDe(a.data_geracao || a.nome); return d && d >= inicio && d <= somaDias(fim, 3); });
   // Cada arquivo traz um ou mais dias; se dois arquivos repetirem o mesmo dia, vale a maior contagem de cada lançamento
   const porChave = new Map();
@@ -72,7 +78,7 @@ export async function extratoEfi(inicio, fim, hoje) {
       const op = { cert: c.cert, key: c.key, cabecalhos: { Authorization: 'Bearer ' + tp } };
       for (let pagina = 0; pagina < 20; pagina++) {
         const r = await requisitar(`${PIX()}/v2/pix?inicio=${desde}T00:00:00-03:00&fim=${fim}T23:59:59-03:00&paginacao.paginaAtual=${pagina}&paginacao.itensPorPagina=1000`, op);
-        if (r.status !== 200) { avisos.push('Pix do dia não consultados: ' + detalhe(r)); break; }
+        if (r.status !== 200) { avisos.push('Pix do dia não consultados: ' + detalhe(r) + '.' + semEscopo(r, 'API Pix: consultar Pix (pix.read)')); break; }
         for (const p of r.json?.pix || []) {
           const valor = Number(p.valor); if (!valor) continue;
           const nome = p.pagador?.nome || p.infoPagador || 'Pix recebido';

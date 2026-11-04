@@ -25,7 +25,7 @@ A tela **Conciliação bancária** busca o extrato direto no banco, sem arquivo 
 
 1. Na conta Efí Empresas, abra **API** > **Introdução** > **Criar aplicação**.
 2. Marque os escopos:
-   - **API Extratos:** todos os itens, que são só de consulta e de agendamento do arquivo de extrato.
+   - **API Extratos:** consultar arquivos e recorrências (`gn.cnab-statement.statement.read`) e criar/revisar recorrências (`gn.cnab-statement.statement.write`), no ambiente de **Produção**.
    - **API Pix:** apenas **Consultar Pix** (pix.read).
 3. Não marque envio de Pix, pagamentos ou cobranças.
 4. Anote o **Client ID** e o **Client Secret** de **Produção**.
