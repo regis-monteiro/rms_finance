@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { supabase, type Lancamento, type Status } from '../lib/supabase';
@@ -41,6 +42,19 @@ export default function Lancamentos() {
   const [modal, setModalBruto] = usePersistente<'transf' | 'repet' | 'copiar' | 'alterar' | null>('lanc:modal', null);
   const setModal = (m: typeof modal) => { if (!m) limparRascunhos('lote:'); setModalBruto(m); };
   const [aviso, setAviso] = useState('');
+  const [params, setParams] = useSearchParams();
+  // Atalhos vindos de outras telas: ?abrir=ID abre o lançamento; ?mes, ?tipo e ?status aplicam filtros
+  useEffect(() => {
+    const id = Number(params.get('abrir')), m = params.get('mes'), t = params.get('tipo'), st = params.get('status');
+    if (!id && !m && !t && !st) return;
+    setAba('lanc');
+    if (m && /^\d{4}-\d{2}$/.test(m)) setMes(m);
+    if (t || st) setF(x => ({ ...x, tipo: t || '', status: st || '' }));
+    if (id) supabase.from('lancamentos').select('*').eq('id', id).single().then(({ data }) => {
+      if (data) { const l = data as Lancamento; setMes(l.vencimento.slice(0, 7)); abrir({ ...l }); }
+    });
+    setParams({}, { replace: true });
+  }, []);
   const avisar = (t: string) => { setAviso(t); setTimeout(() => setAviso(''), 3500); };
 
   useEffect(() => {

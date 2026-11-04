@@ -146,3 +146,7 @@ a{color:var(--navy)}
 .pilha{display:flex;flex-direction:column;gap:3px;align-items:flex-end}
 .rateio{background:#FBF9F3;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px}
 .rateio select,.rateio input{font-size:12.5px;padding:5px 7px}
+.clicavel{cursor:pointer;transition:box-shadow .15s}
+.card.clicavel:hover{box-shadow:0 0 0 2px var(--gold-soft)}
+tr.clicavel:hover td{background:#FBF9F3}
+.caixa input{font-size:12.5px;padding:4px 6px}

@@ -1,4 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { usePersistente } from '../lib/rascunho';
+import FluxoProjetado from '../components/FluxoProjetado';
+import { ModalDetalheDRE } from '../components/DetalheDRE';
 import { useCadastros, nomeCentro, OpcoesCentro } from '../lib/useCadastros';
 import { carregarDRE, useAnos, useLinhasDRE, valorModo, SUBTOTAIS, type Modo, type PontoDRE } from '../lib/analises';
 import { MESES_CURTOS } from '../lib/graficos';
@@ -16,7 +20,10 @@ export default function DRE() {
   const anos = useAnos();
   const [ano, setAno] = useState(new Date().getFullYear());
   const [conta, setConta] = useState<number | null>(null);
-  const [modo, setModo] = useState<Modo>('comb');
+  const [params] = useSearchParams();
+  const [modo, setModo] = useState<Modo>((['real', 'prev', 'comb'].includes(params.get('modo') || '') ? params.get('modo') : 'comb') as Modo);
+  const [aba, setAba] = usePersistente<'dre' | 'fluxo'>('dre:aba', 'dre');
+  const [detalhe, setDetalhe] = useState<{ linha: number; grupo: number | null; mes: number; titulo: string } | null>(null);
   const [abertas, setAbertas] = useState<Set<number>>(new Set());
   const [pontos, setPontos] = useState<PontoDRE[]>([]);
   const [erro, setErro] = useState('');
@@ -39,7 +46,8 @@ export default function DRE() {
   const soma = (a: number[]) => a.reduce((x, y) => x + y, 0);
   const totLinha = (id: number) => { const t = Array(12).fill(0); tabela.get(id)?.forEach(a => a.forEach((v, i) => (t[i] += v))); return t as number[]; };
   const nomeG = (id: number | null) => (id == null ? 'Grupos restritos (total)' : grupos.find(g => g.id === id)?.nome || '·');
-  const cel = (a: number[], forte = false) => <>{a.map((v, i) => <td key={i} className={'r ' + (v < -0.5 ? 'neg' : '')}>{Math.abs(v) < 0.5 ? '·' : n(v)}</td>)}<td className="r" style={{ fontWeight: 700 }}>{n(soma(a))}</td></>;
+  const cel = (a: number[], clique?: (mes: number) => void) => <>{a.map((v, i) => <td key={i} className={'r ' + (v < -0.5 ? 'neg' : '') + (clique && Math.abs(v) >= 0.5 ? ' clicavel celula' : '')}
+    title={clique && Math.abs(v) >= 0.5 ? 'Ver os lançamentos deste valor' : undefined} onClick={clique && Math.abs(v) >= 0.5 ? e => { e.stopPropagation(); clique(i + 1); } : undefined}>{Math.abs(v) < 0.5 ? '·' : n(v)}</td>)}<td className="r" style={{ fontWeight: 700 }}>{n(soma(a))}</td></>;
 
   const resultado = linhas.filter(l => l.no_resultado), fora = linhas.filter(l => !l.no_resultado);
   let acum = Array(12).fill(0) as number[];
@@ -55,8 +63,8 @@ export default function DRE() {
     return (
       <Fragment key={l.id}>
         <tr style={{ cursor: gs.length ? 'pointer' : 'default', fontWeight: 600 }} onClick={() => { const s = new Set(abertas); aberta ? s.delete(l.id) : s.add(l.id); setAbertas(s); }}>
-          <td>{gs.length ? (aberta ? '▾ ' : '▸ ') : '   '}{l.nome}</td>{cel(t)}</tr>
-        {aberta && gs.map(([g, a]) => <tr key={String(g)} style={{ fontSize: 12.5, color: 'var(--muted)' }}><td style={{ paddingLeft: 28 }}>{nomeG(g)}</td>{cel(a)}</tr>)}
+          <td>{gs.length ? (aberta ? '▾ ' : '▸ ') : '   '}{l.nome}</td>{cel(t, m => setDetalhe({ linha: l.id, grupo: null, mes: m, titulo: l.nome }))}</tr>
+        {aberta && gs.map(([g, a]) => <tr key={String(g)} style={{ fontSize: 12.5, color: 'var(--muted)' }}><td style={{ paddingLeft: 28 }}>{nomeG(g)}</td>{cel(a, g != null ? m => setDetalhe({ linha: l.id, grupo: g, mes: m, titulo: `${l.nome} · ${nomeG(g)}` }) : undefined)}</tr>)}
         {sub && <tr style={{ fontWeight: 700, background: '#F7F3E8' }}><td>{sub[1]}</td>{cel(subTot!)}</tr>}
       </Fragment>
     );
@@ -103,10 +111,15 @@ export default function DRE() {
 
   return (
     <>
-      <Cabecalho titulo="DRE / Análise do fluxo" sub="Resultado por mês, regime de caixa, com filtro por conta">
-        <button className="btn ghost" onClick={exportar}>CSV</button>
-        <button className="btn" onClick={() => setEmitir(true)}>Emitir PDF / Excel</button>
+      <Cabecalho titulo="DRE / Análise do fluxo" sub={aba === 'fluxo' ? 'Saldo projetado para os próximos 12 meses' : 'Resultado por mês, regime de caixa, com filtro por conta'}>
+        {aba === 'dre' && <><button className="btn ghost" onClick={exportar}>CSV</button>
+        <button className="btn" onClick={() => setEmitir(true)}>Emitir PDF / Excel</button></>}
       </Cabecalho>
+      <div className="tabs">
+        <button className={aba === 'dre' ? 'on' : ''} onClick={() => setAba('dre')}>DRE / análise do fluxo</button>
+        <button className={aba === 'fluxo' ? 'on' : ''} onClick={() => setAba('fluxo')}>Fluxo de caixa projetado</button>
+      </div>
+      {aba === 'fluxo' ? <FluxoProjetado /> : <>
       <div className="filters">
         <select value={ano} onChange={e => setAno(Number(e.target.value))}>{anos.map(a => <option key={a}>{a}</option>)}</select>
         <select value={conta ?? ''} onChange={e => setConta(e.target.value ? Number(e.target.value) : null)}><option value="">Todas as contas</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
@@ -127,8 +140,10 @@ export default function DRE() {
             <tr style={{ fontWeight: 700, background: 'var(--navy)', color: 'var(--ivory)' }}><td>Variação do caixa no mês</td>{variacao.map((v, i) => <td key={i} className="r">{Math.abs(v) < 0.5 ? '·' : n(v)}</td>)}<td className="r">{n(soma(variacao))}</td></tr>
           </tbody>
         </table>
-        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Valores em R$. Realizado pela data de pagamento; previsto pelo vencimento. Compras de cartão entram no mês de vencimento da fatura{conta ? ', na proporção paga por esta conta' : ''}. Clique numa linha para ver os grupos.{centro ? ` Centro de custo: ${nomeCentro(centros, centro)}${centros.find(c => c.id === centro)?.nome === 'Geral' ? ' (inclui os subcentros e o que está sem centro)' : ''}.` : ''}</p>
+        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Valores em R$. Realizado pela data de pagamento; previsto pelo vencimento. Compras de cartão entram no mês de vencimento da fatura{conta ? ', na proporção paga por esta conta' : ''}. Clique numa linha para ver os grupos e num valor para ver os lançamentos.{centro ? ` Centro de custo: ${nomeCentro(centros, centro)}${centros.find(c => c.id === centro)?.nome === 'Geral' ? ' (inclui os subcentros e o que está sem centro)' : ''}.` : ''}</p>
       </div>
+      </>}
+      {detalhe && <ModalDetalheDRE ano={ano} mes={detalhe.mes} linha={detalhe.linha} grupo={detalhe.grupo} conta={conta} centro={centro} modo={modo} titulo={`${detalhe.titulo} · ${MESES_CURTOS[detalhe.mes - 1]}/${ano}`} aoFechar={() => setDetalhe(null)} />}
       {emitir && <ModalEmissao titulo={`DRE ${ano}`} assinatura semAssinaturaPadrao={modo !== 'real'} avisoSemAssinatura={modo !== 'real' ? 'Este DRE inclui valores previstos, por isso a emissão sem assinatura vem selecionada.' : undefined} aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio}
         extras={<label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginBottom: 8 }}><input type="checkbox" checked={comGrupos} onChange={e => setComGrupos(e.target.checked)} /> Incluir o detalhamento por grupo</label>} />}
     </>

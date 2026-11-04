@@ -24,7 +24,7 @@ export function GraficoLinhas({ series, rotulos = MESES_CURTOS, altura = 240 }: 
     <>
       <svg viewBox={`0 0 ${w} ${altura}`} width="100%">
         {ticks.map(v => <g key={v}><line x1={pad.l} x2={w - pad.r} y1={y(v)} y2={y(v)} stroke={v === 0 ? '#D8D2C2' : '#EEE9DC'} /><text x={pad.l - 8} y={y(v) + 4} textAnchor="end">{k(v)}</text></g>)}
-        {rotulos.map((m, i) => <text key={m} x={x(i)} y={altura - 6} textAnchor="middle">{m}</text>)}
+        {rotulos.map((m, i) => m && <text key={i} x={x(i)} y={altura - 6} textAnchor="middle">{m}</text>)}
         {series.map(s => {
           const pts = s.dados.map((v, i) => (v == null ? null : [x(i), y(v), v] as const)).filter(Boolean) as (readonly [number, number, number])[];
           return <g key={s.nome}>

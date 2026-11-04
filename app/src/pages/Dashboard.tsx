@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { ModalMovimentacao } from '../components/MovimentacaoConta';
 import { supabase, type Lancamento } from '../lib/supabase';
 import { useAuth, podeEditar } from '../lib/auth';
 import { brl, diaMes, hojeISO, somaDias, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
@@ -24,6 +25,10 @@ export default function Dashboard() {
   const [receb, setReceb] = useState({ previsto: 0, recebido: 0, aberto: 0 });
   const linhasDre = useLinhasDRE();
   const [emitir, setEmitir] = useState(false);
+  const [mov, setMov] = useState<{ id: number | null } | null>(null);
+  const nav = useNavigate();
+  const opera = podeEditar(usuario?.perfil);
+  const ir = (url: string, rasc?: Record<string, unknown>) => { try { Object.entries(rasc || {}).forEach(([k, v]) => localStorage.setItem('rms-rascunho:' + k, JSON.stringify(v))); } catch { /* ignora */ } nav(url); };
   const [proj, setProj] = useState<{ conta_id: number; rendimento_pendente: number; irrf_pendente: number }[]>([]);
   const hoje = hojeISO(), [anoH, mesH] = hoje.split('-').map(Number), fimMes = `${hoje.slice(0, 8)}${new Date(anoH, mesH, 0).getDate()}`;
 
@@ -78,11 +83,12 @@ export default function Dashboard() {
   return (
     <>
       <Cabecalho titulo="Dashboard" sub={'Posição em ' + hoje.split('-').reverse().join('/')}><button className="btn" onClick={() => setEmitir(true)}>Emitir PDF / Excel</button></Cabecalho>
+      {mov && <ModalMovimentacao conta={contas.find(c => c.id === mov.id) || null} contas={contas} saldoAtual={mov.id == null ? total : Number(saldos.find(x => x.id === mov.id)?.saldo || 0)} aoFechar={() => setMov(null)} />}
       {emitir && <ModalEmissao titulo="Dashboard" assinatura aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio} />}
       <div className="grid g4">
-        <div className="card kpi total"><div className="lbl">Saldo total</div><div className="val">{brl(total)}</div><div className="sub">{saldos.length} contas</div></div>
+        <div className="card kpi total clicavel" title="Ver a movimentação de todas as contas" onClick={() => opera && setMov({ id: null })}><div className="lbl">Saldo total</div><div className="val">{brl(total)}</div><div className="sub">{saldos.length} contas</div></div>
         {saldos.map(s => (
-          <div className="card kpi" key={s.id}><div className="lbl">{s.nome}<span className="tag">{TIPO[s.tipo]}</span></div><div className="val">{brl(s.saldo)}</div>{(() => { const p = proj.find(x => x.conta_id === s.id); if (!p || (!Number(p.rendimento_pendente) && !Number(p.irrf_pendente))) return null;
+          <div className="card kpi clicavel" key={s.id} title="Ver as últimas transações e o saldo dia a dia" onClick={() => opera && setMov({ id: s.id })}><div className="lbl">{s.nome}<span className="tag">{TIPO[s.tipo]}</span></div><div className="val">{brl(s.saldo)}</div>{(() => { const p = proj.find(x => x.conta_id === s.id); if (!p || (!Number(p.rendimento_pendente) && !Number(p.irrf_pendente))) return null;
             return <div className="sub" title="Saldo lançado + rendimentos ainda não lançados − IRRF projetado (retido só no resgate ou vencimento)">Líquido projetado: {brl(Number(s.saldo) + Number(p.rendimento_pendente) - Number(p.irrf_pendente))}</div>; })()}</div>
         ))}
       </div>
@@ -93,12 +99,12 @@ export default function Dashboard() {
         const resPrev = resultadoMensal(dre, linhasDre, 'prev');
         return (
           <div className="grid g5 mt">
-            <div className="card kpi"><div className="lbl">A receber em {MESES_LONGOS[m].toLowerCase()}</div><div className="val">{brl(aReceber)}</div>
+            <div className="card kpi clicavel" title="Abrir as contas a receber em aberto" onClick={() => ir('/receber', opera ? { 'rec:aba': 'aberto' } : { 'rec:aba': 'resumo' })}><div className="lbl">A receber em {MESES_LONGOS[m].toLowerCase()}</div><div className="val">{brl(aReceber)}</div>
               <div className="sub">{receb.previsto ? `previsto ${brl(receb.previsto)} · recebido ${brl(receb.recebido)}` : 'entradas lançadas em aberto'}</div></div>
-            <div className="card kpi"><div className="lbl">Receita recebida em {MESES_LONGOS[m].toLowerCase()}</div><div className="val">{brl(rec[m])}</div><div className="sub">até hoje</div></div>
-            <div className="card kpi"><div className="lbl">Resultado de {ant != null ? MESES_LONGOS[ant].toLowerCase() : '·'}</div><div className={'val ' + (ant != null && res[ant] < 0 ? 'neg' : 'pos')}>{ant != null ? brl(res[ant]) : '·'}</div><div className="sub">último mês fechado, realizado</div></div>
-            <div className="card kpi"><div className="lbl">Resultado acumulado {anoH}</div><div className={'val ' + (res.reduce((a, b) => a + b, 0) < 0 ? 'neg' : 'pos')}>{brl(res.reduce((a, b) => a + b, 0))}</div><div className="sub">realizado até hoje</div></div>
-            <div className="card kpi"><div className="lbl">Resultado previsto até dezembro</div><div className="val">{brl(resPrev.reduce((a, b) => a + b, 0))}</div><div className="sub">lançamentos ainda não pagos</div></div>
+            <div className="card kpi clicavel" title="Abrir os recebimentos do mês" onClick={() => opera ? nav(`/lancamentos?mes=${hoje.slice(0, 7)}&tipo=entrada&status=pago`) : nav('/receber')}><div className="lbl">Receita recebida em {MESES_LONGOS[m].toLowerCase()}</div><div className="val">{brl(rec[m])}</div><div className="sub">até hoje</div></div>
+            <div className="card kpi clicavel" title="Abrir o DRE (realizado)" onClick={() => nav('/dre?modo=real')}><div className="lbl">Resultado de {ant != null ? MESES_LONGOS[ant].toLowerCase() : '·'}</div><div className={'val ' + (ant != null && res[ant] < 0 ? 'neg' : 'pos')}>{ant != null ? brl(res[ant]) : '·'}</div><div className="sub">último mês fechado, realizado</div></div>
+            <div className="card kpi clicavel" title="Abrir o DRE (realizado)" onClick={() => nav('/dre?modo=real')}><div className="lbl">Resultado acumulado {anoH}</div><div className={'val ' + (res.reduce((a, b) => a + b, 0) < 0 ? 'neg' : 'pos')}>{brl(res.reduce((a, b) => a + b, 0))}</div><div className="sub">realizado até hoje</div></div>
+            <div className="card kpi clicavel" title="Abrir o fluxo de caixa projetado" onClick={() => ir('/dre', { 'dre:aba': 'fluxo' })}><div className="lbl">Resultado previsto até dezembro</div><div className="val">{brl(resPrev.reduce((a, b) => a + b, 0))}</div><div className="sub">lançamentos ainda não pagos</div></div>
           </div>);
       })()}
 
@@ -115,7 +121,7 @@ export default function Dashboard() {
               <table>
                 <thead><tr><th>Vencimento</th><th>Fornecedor / Beneficiário</th><th>Grupo</th><th>Conta</th><th className="r">Valor</th><th>Status</th></tr></thead>
                 <tbody>{abertos.slice(0, 10).map(l => { const s = statusEfetivo(l.status, l.vencimento); return (
-                  <tr key={l.id}><td>{diaMes(l.vencimento)}</td><td>{l.favorecido}</td><td>{nomeGrupo(l.grupo_id)}</td><td>{nomeConta(l.conta_id)}</td><td className="r">{brl(l.valor)}</td><td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td></tr>
+                  <tr key={l.id} className="clicavel" title="Abrir para baixar ou alterar" onClick={() => nav(`/lancamentos?abrir=${l.id}`)}><td>{diaMes(l.vencimento)}</td><td>{l.favorecido}</td><td>{nomeGrupo(l.grupo_id)}</td><td>{nomeConta(l.conta_id)}</td><td className="r">{brl(l.valor)}</td><td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td></tr>
                 ); })}</tbody>
               </table>
             )}
@@ -125,7 +131,7 @@ export default function Dashboard() {
             <h3>Cartões <small>Faturas em aberto</small></h3>
             {faturas.length === 0 ? <div className="empty" style={{ padding: 24 }}>Nenhuma fatura em aberto.</div> : (
               <table><thead><tr><th>Cartão</th><th>Venc.</th><th className="r">Em aberto</th></tr></thead>
-                <tbody>{faturas.map(f => <tr key={f.id}><td>{f.cartao}</td><td>{diaMes(f.data_vencimento)}</td><td className="r">{brl(f.total - f.pago)}</td></tr>)}</tbody></table>
+                <tbody>{faturas.map(f => <tr key={f.id} className="clicavel" title="Abrir a fatura" onClick={() => nav(`/cartoes?fatura=${f.id}`)}><td>{f.cartao}</td><td>{diaMes(f.data_vencimento)}</td><td className="r">{brl(f.total - f.pago)}</td></tr>)}</tbody></table>
             )}
           </div>
         </div>
