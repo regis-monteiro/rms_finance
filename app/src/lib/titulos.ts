@@ -5,6 +5,8 @@ export interface LinhaRateio { grupo_id: number | null; subgrupo_id: number | nu
 export interface Rateio { id?: number; lancamento_id: number; grupo_id: number; subgrupo_id: number | null; centro_custo_id: number | null; fracao: number; valor: number | null }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
+/** Estado antes da baixa, guardado para poder desfazê-la */
+export const anterior = (l: Pick<Lancamento, 'status' | 'conta_id'>) => ({ status: l.status === 'pago' ? 'confirmado' : l.status, conta_id: l.conta_id });
 const agora = () => new Date().toISOString();
 
 export async function carregarRateio(lancamentoId: number): Promise<Rateio[]> {
@@ -38,7 +40,7 @@ export async function registrarPagamento(l: Lancamento, valor: number, data: str
   const saldo = Number(l.valor);
   if (!(valor > 0) || valor > saldo + 0.004) return { erro: 'O valor deve ser maior que zero e até ' + saldo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + '.', id: null };
   if (valor >= saldo - 0.004) {
-    const { error } = await supabase.from('lancamentos').update({ status: 'pago', conta_id: contaId, data_pagamento: data, atualizado_em: agora() }).eq('id', l.id);
+    const { error } = await supabase.from('lancamentos').update({ status: 'pago', conta_id: contaId, data_pagamento: data, baixa_anterior: anterior(l), atualizado_em: agora() }).eq('id', l.id);
     return { erro: error?.message ?? null, id: l.id };
   }
   const { id: _id, criado_em: _c, criado_por: _p, juros_lanc_id: _j, ofx_fitid: _o, ...resto } = l as Lancamento & { criado_em?: string; criado_por?: string };
@@ -62,10 +64,7 @@ export async function historicoPagamentos(titulo: Lancamento): Promise<Lancament
 
 /** Estorna um pagamento: o valor volta ao saldo em aberto da conta */
 export async function estornarPagamento(titulo: Lancamento, pagamento: Lancamento): Promise<string | null> {
-  if (pagamento.id === titulo.id) {
-    const { error } = await supabase.from('lancamentos').update({ status: 'confirmado', data_pagamento: null, ofx_fitid: null, atualizado_em: agora() }).eq('id', titulo.id);
-    return error?.message ?? null;
-  }
+  if (pagamento.id === titulo.id) return desfazerBaixa(titulo);
   if (titulo.status === 'pago') return 'Estorne primeiro a quitação (último pagamento) para reabrir a conta.';
   const del = await supabase.from('lancamentos').delete().eq('id', pagamento.id);
   if (del.error) return del.error.message;
@@ -75,3 +74,53 @@ export async function estornarPagamento(titulo: Lancamento, pagamento: Lancament
 }
 
 export const totalTitulo = (l: Lancamento) => Number(l.valor_original ?? l.valor);
+
+/** Tira um lançamento do lote de recebimento e recalcula o total e a tarifa do lote */
+async function removerDoLote(lancamentoId: number) {
+  const { data: it } = await supabase.from('lotes_recebimento_itens').select('id,lote_id').eq('lancamento_id', lancamentoId);
+  for (const x of (it as { id: number; lote_id: number }[]) || []) {
+    await supabase.from('lotes_recebimento_itens').delete().eq('id', x.id);
+    const { data: lote } = await supabase.from('lotes_recebimento').select('*').eq('id', x.lote_id).single();
+    const { data: resto } = await supabase.from('lotes_recebimento_itens').select('valor').eq('lote_id', x.lote_id);
+    const n = (resto || []).length, total = r2(((resto as { valor: number }[]) || []).reduce((a, y) => a + Number(y.valor), 0));
+    const lt = lote as { lanc_tarifa_id: number | null; tarifa_unitaria: number } | null;
+    if (!lt) continue;
+    if (!n) {
+      if (lt.lanc_tarifa_id) await supabase.from('lancamentos').delete().eq('id', lt.lanc_tarifa_id);
+      await supabase.from('lotes_recebimento').delete().eq('id', x.lote_id);
+    } else {
+      await supabase.from('lotes_recebimento').update({ quantidade: n, total }).eq('id', x.lote_id);
+      if (lt.lanc_tarifa_id) await supabase.from('lancamentos').update({ valor: r2(n * Number(lt.tarifa_unitaria)), referencia: `Tarifa de ${n} boleto(s)`, observacao: `tarifa de ${n} boleto(s) × ${Number(lt.tarifa_unitaria).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, atualizado_em: agora() }).eq('id', lt.lanc_tarifa_id);
+    }
+  }
+}
+
+/**
+ * Desfaz a baixa sem excluir a conta a pagar ou a receber.
+ * Pagamento parcial: o valor volta ao saldo da conta. Pagamento total: a conta volta ao status e à conta bancária anteriores.
+ * Também desfaz o que dependia da baixa: multa/juros lançados, transferência (as duas pontas), fatura de cartão, lote de boletos e conciliação.
+ */
+export async function desfazerBaixa(l: Lancamento): Promise<string | null> {
+  if (l.status !== 'pago') return 'Este lançamento não está baixado.';
+  if (l.titulo_id) {
+    const { data: t } = await supabase.from('lancamentos').select('*').eq('id', l.titulo_id).single();
+    if (!t) return 'Conta original não encontrada.';
+    const e = await estornarPagamento(t as Lancamento, l);
+    if (!e) await removerDoLote(l.id);
+    return e;
+  }
+  const conc = (l.ofx_anterior || {}) as { modo?: string; status?: string; conta_id?: number | null };
+  const ant = (l.baixa_anterior || (conc.modo === 'baixa' ? conc : {})) as { status?: string; conta_id?: number | null };
+  const volta = { status: ant.status && ant.status !== 'pago' ? ant.status : 'confirmado', data_pagamento: null, baixa_anterior: null, ofx_fitid: null, ofx_anterior: null, atualizado_em: agora() };
+  const r = l.transferencia_id
+    ? await supabase.from('lancamentos').update(volta).eq('transferencia_id', l.transferencia_id)
+    : await supabase.from('lancamentos').update({ ...volta, conta_id: 'conta_id' in ant ? ant.conta_id ?? null : l.conta_id }).eq('id', l.id);
+  if (r.error) return r.error.message;
+  await removerDoLote(l.id);
+  if (l.juros_lanc_id) {
+    await supabase.from('lancamentos').update({ juros_lanc_id: null }).eq('id', l.id);
+    await supabase.from('lancamentos').delete().eq('id', l.juros_lanc_id);
+  }
+  if (l.fatura_id) { const { sincronizarFatura } = await import('./faturas'); await sincronizarFatura(l.fatura_id); }
+  return null;
+}

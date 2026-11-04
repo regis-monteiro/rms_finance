@@ -8,6 +8,7 @@ import { useCadastros, nomeCentro, OpcoesCentro } from '../lib/useCadastros';
 import { usePersistente } from '../lib/rascunho';
 import { datasFatura, obterFatura, sincronizarFatura, situacaoFatura } from '../lib/faturas';
 import { Cabecalho } from '../components/Layout';
+import { anterior, desfazerBaixa } from '../lib/titulos';
 
 interface Fatura { id: number; cartao_id: number; cartao: string; competencia: string; data_fechamento: string; data_vencimento: string; total: number; pago: number }
 interface Compra { id: number; fatura_id: number; data_compra: string; descricao: string; grupo_id: number; parcela: string | null; valor: number }
@@ -113,7 +114,7 @@ export default function Cartoes() {
 
   async function baixarPagto(p: Lancamento) {
     if (!p.conta_id) { setErro('Escolha a conta antes de marcar como pago.'); return; }
-    await supabase.from('lancamentos').update({ status: 'pago', data_pagamento: hoje, atualizado_em: new Date().toISOString() }).eq('id', p.id);
+    await supabase.from('lancamentos').update({ status: 'pago', data_pagamento: hoje, baixa_anterior: anterior(p), atualizado_em: new Date().toISOString() }).eq('id', p.id);
     if (p.fatura_id) await sincronizarFatura(p.fatura_id);
     recarregar();
   }
@@ -169,7 +170,8 @@ export default function Cartoes() {
                         <option value="">A definir</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
                         {alerta && <div style={{ fontSize: 11, color: '#8A6A12', marginTop: 3 }}>Confirme a conta usada</div>}</td>
                       <td className="r">{brl(p.valor)}</td><td><span className={'st ' + classeStatus(p.status)}>{STATUS_LABEL[p.status]}</span></td>
-                      <td className="r">{p.status !== 'pago' && p.status !== 'previsto' && <button className="btn ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => baixarPagto(p)}>Marcar pago</button>}</td></tr>);
+                      <td className="r">{p.status !== 'pago' && p.status !== 'previsto' && <button className="btn ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => baixarPagto(p)}>Marcar pago</button>}
+                        {p.status === 'pago' && <button className="btn ghost mini" title="Volta a ficar agendado/confirmado, sem excluir" onClick={async () => { const e = await desfazerBaixa(p); if (e) setErro(e); recarregar(); }}>Desfazer baixa</button>}</td></tr>);
                 })}</tbody></table>
             )}
             {erro && !novaCompra && !pagto && <div className="err mt">{erro}</div>}

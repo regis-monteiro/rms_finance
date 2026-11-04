@@ -181,7 +181,7 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
         </p>
         {erro && <div className="err mt">{erro}</div>}
         <div className="actions">
-          {!confirmaExcluir ? <button className="btn ghost" style={{ marginRight: 'auto', color: 'var(--neg)' }} disabled={proc} onClick={() => setConfirmaExcluir(true)}>Excluir lote</button>
+          {!confirmaExcluir ? <button className="btn ghost" style={{ marginRight: 'auto', color: 'var(--neg)' }} disabled={proc} onClick={() => setConfirmaExcluir(true)}>{baixa ? 'Desfazer baixa do lote' : 'Excluir lote'}</button>
             : <span style={{ marginRight: 'auto', display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>Confirma? {baixa ? 'Os boletos voltam a ficar em aberto.' : 'O recebimento consolidado será excluído.'}
               <button className="btn mini" style={{ background: 'var(--neg)', borderColor: 'var(--neg)' }} disabled={proc} onClick={excluir}>Sim, excluir</button><button className="btn ghost mini" onClick={() => setConfirmaExcluir(false)}>Não</button></span>}
           <button className="btn ghost" onClick={aoFechar}>Cancelar</button>

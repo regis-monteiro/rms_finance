@@ -11,7 +11,7 @@ import SugestaoClassificacao from '../components/SugestaoClassificacao';
 import { EditorRateio, HistoricoPagamentos, linhaVazia, somaRateio } from '../components/Rateio';
 import { DetalheLote } from '../components/Recebimentos';
 import { ModalEditarLote } from '../components/EditarLote';
-import { carregarRateio, gravarRateio, type LinhaRateio } from '../lib/titulos';
+import { anterior, carregarRateio, desfazerBaixa, gravarRateio, type LinhaRateio } from '../lib/titulos';
 import { Cabecalho } from '../components/Layout';
 import { FormBeneficiario } from '../components/Beneficiarios';
 import { formatarDocumento } from '../lib/documento';
@@ -44,7 +44,7 @@ export default function Lancamentos() {
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
   const [aba, setAba] = usePersistente<'lanc' | 'rend'>('lanc:aba', 'lanc');
-  const [modal, setModalBruto] = usePersistente<'transf' | 'repet' | 'copiar' | 'alterar' | null>('lanc:modal', null);
+  const [modal, setModalBruto] = usePersistente<'transf' | 'repet' | 'copiar' | 'alterar' | 'desfazer' | null>('lanc:modal', null);
   const setModal = (m: typeof modal) => { if (!m) limparRascunhos('lote:'); setModalBruto(m); };
   const [aviso, setAviso] = useState('');
   const [params, setParams] = useSearchParams();
@@ -107,6 +107,7 @@ export default function Lancamentos() {
     }
     return out;
   }, [linhas, lotes]);
+  const pagosSel = lista.filter(l => sel.has(l.id) && l.status === 'pago' && !l.fatura_id).length;
   const pendentesSel = lista.filter(l => sel.has(l.id) && l.status !== 'pago').length;
   const ent = linhas.filter(l => l.tipo === 'entrada').reduce((a, l) => a + Number(l.valor), 0);
   const sai = linhas.filter(l => l.tipo === 'saida').reduce((a, l) => a + Number(l.valor), 0);
@@ -115,7 +116,8 @@ export default function Lancamentos() {
     e.preventDefault(); setErro('');
     if (!form) return;
     const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null, centro_custo_id: form.centro_custo_id ? Number(form.centro_custo_id) : null,
-      data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null, juros_multa: Number(form.juros_multa || 0), atualizado_em: new Date().toISOString() };
+      data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null,
+      ...(form.status === 'pago' && form.id && lista.find(x => x.id === form.id)?.status !== 'pago' ? { baixa_anterior: anterior(lista.find(x => x.id === form.id)!) } : {}), juros_multa: Number(form.juros_multa || 0), atualizado_em: new Date().toISOString() };
     if (form.status === 'pago' && !dados.conta_id) { setErro('Para marcar como Pago, informe a conta.'); return; }
     if (rateio) {
       const validas = rateio.filter(l => l.grupo_id && Number(l.valor) > 0);
@@ -172,7 +174,7 @@ export default function Lancamentos() {
     for (const l of itens) {
       const conta = l.conta_id ?? (baixa.conta ? Number(baixa.conta) : null);
       if (!conta) { setErro(`"${l.favorecido}" está sem conta. Escolha uma conta para os itens sem conta.`); return; }
-      const { error } = await supabase.from('lancamentos').update({ status: 'pago', data_pagamento: baixa.data, conta_id: conta, atualizado_em: new Date().toISOString() }).eq('id', l.id);
+      const { error } = await supabase.from('lancamentos').update({ status: 'pago', data_pagamento: baixa.data, conta_id: conta, baixa_anterior: anterior(l), atualizado_em: new Date().toISOString() }).eq('id', l.id);
       if (error) { setErro(error.message); return; }
     }
     setBaixa(null); setVersao(v => v + 1);
@@ -188,7 +190,32 @@ export default function Lancamentos() {
     fechar(); setVersao(v => v + 1);
   }
 
+  const [confirmaDesfazer, setConfirmaDesfazer] = useState(false);
+  const baixadoForm = !!form?.id && lista.find(x => x.id === form.id)?.status === 'pago' && !form.fatura_id;
+  async function desfazerForm() {
+    if (!form?.id) return;
+    const { data } = await supabase.from('lancamentos').select('*').eq('id', form.id).single();
+    const e = data ? await desfazerBaixa(data as Lancamento) : 'Lançamento não encontrado.';
+    setConfirmaDesfazer(false);
+    if (e) { setErro(e); return; }
+    fechar(); avisar(form.titulo_id ? 'Pagamento estornado: o valor voltou ao saldo da conta.' : 'Baixa desfeita: a conta voltou a ficar em aberto.'); setVersao(v => v + 1);
+  }
+  async function desfazerSelecionados() {
+    setErro('');
+    const itens = lista.filter(l => sel.has(l.id) && l.status === 'pago' && !l.fatura_id);
+    const feitos = new Set<string>(); let n = 0; const falhas: string[] = [];
+    for (const l of itens) {
+      if (l.transferencia_id) { if (feitos.has(l.transferencia_id)) continue; feitos.add(l.transferencia_id); }
+      const { data } = await supabase.from('lancamentos').select('*').eq('id', l.id).single();
+      const e = data ? await desfazerBaixa(data as Lancamento) : 'não encontrado';
+      if (e) falhas.push(`${l.favorecido || 'lançamento'}: ${e}`); else n++;
+    }
+    setModal(null); setVersao(v => v + 1);
+    avisar(`${n} baixa(s) desfeita(s).`);
+    if (falhas.length) setErro('Não desfeitas: ' + falhas.join(' · '));
+  }
   const abrir = (l: Form) => {
+    setConfirmaDesfazer(false);
     setErro(''); setBuscaBenef(rotulo(beneficiarios.find(b => b.id === l.beneficiario_id))); setForm(l); setRateio(null);
     if (l.id) carregarRateio(l.id).then(r => r.length && setRateio(r.map(x => ({ grupo_id: x.grupo_id, subgrupo_id: x.subgrupo_id, centro_custo_id: x.centro_custo_id,
       valor: String(Math.round(Number(x.fracao) * Number(l.valor) * 100) / 100), pct: String(Math.round(Number(x.fracao) * 10000) / 100) }))));
@@ -233,6 +260,7 @@ export default function Lancamentos() {
         <button className="btn ghost" disabled={!sel.size} onClick={() => setModal('alterar')}>Alterar em lote</button>
         <button className="btn ghost" disabled={!sel.size} onClick={() => setModal('copiar')}>Copiar como previsão</button>
         <button className="btn ghost" disabled={!pendentesSel} onClick={() => { setErro(''); setBaixa({ data: hoje, conta: '' }); }}>Baixar ({pendentesSel})</button>
+        <button className="btn ghost" disabled={!pagosSel} onClick={() => setModal('desfazer')} title="Volta os selecionados para em aberto, sem excluir">Desfazer baixa ({pagosSel})</button>
       </div>
       <div className="card">
         <div className="filters">
@@ -322,7 +350,11 @@ export default function Lancamentos() {
               <label className="full">Observação<input value={form.observacao ?? ''} onChange={e => setForm({ ...form, observacao: e.target.value })} /></label>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full">
-                {form.id && <button type="button" className="btn ghost" style={{ marginRight: 'auto', color: 'var(--neg)' }} onClick={excluir}>Excluir</button>}
+                {form.id && <button type="button" className="btn ghost" style={{ marginRight: baixadoForm ? 0 : 'auto', color: 'var(--neg)' }} onClick={excluir}>Excluir</button>}
+                {baixadoForm && (!confirmaDesfazer
+                  ? <button type="button" className="btn ghost" style={{ marginRight: 'auto' }} title="Volta a ficar em aberto, sem excluir a conta" onClick={() => setConfirmaDesfazer(true)}>{form.titulo_id ? 'Estornar este pagamento' : 'Desfazer baixa'}</button>
+                  : <span style={{ marginRight: 'auto', display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5 }}>{form.titulo_id ? 'O valor volta ao saldo da conta.' : 'A conta volta a ficar em aberto.'}{form.ofx_fitid ? ' A conciliação com o extrato também é desfeita.' : ''}
+                    <button type="button" className="btn mini" onClick={desfazerForm}>Confirmar</button><button type="button" className="btn ghost mini" onClick={() => setConfirmaDesfazer(false)}>Não</button></span>)}
                 <button type="button" className="btn ghost" onClick={() => fechar()}>Cancelar</button><button className="btn">Salvar</button>
               </div>
             </form>
@@ -330,6 +362,13 @@ export default function Lancamentos() {
         </div>
       )}
 
+      {modal === 'desfazer' && (
+        <div className="modal-bg open"><div className="modal"><h2>Desfazer baixa de {pagosSel} lançamento(s)</h2>
+          <p style={{ fontSize: 13 }}>Os lançamentos voltam a ficar em aberto, com o status e a conta que tinham antes da baixa. Nada é excluído. Pagamentos parciais voltam ao saldo da conta original; transferências voltam nas duas pontas; multa/juros lançados na baixa são removidos; itens de lote de boletos saem do lote (com a tarifa recalculada); conciliações com o extrato são desfeitas.</p>
+          {erro && <div className="err">{erro}</div>}
+          <div className="actions"><button className="btn ghost" onClick={() => setModal(null)}>Cancelar</button><button className="btn" onClick={desfazerSelecionados}>Desfazer baixa</button></div>
+        </div></div>
+      )}
       {loteAberto != null && <ModalEditarLote loteId={loteAberto} cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLoteAberto(null)}
         aoSalvar={m => { setLoteAberto(null); avisar(m); setVersao(v => v + 1); }} />}
       {novoBenef && form && (
