@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { supabase, type Lancamento, type Status } from '../lib/supabase';
@@ -37,6 +37,7 @@ export default function Lancamentos() {
   const [f, setF] = useState({ tipo: '', conta: '', status: '', busca: '' });
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [form, setForm] = usePersistente<Form | null>('lanc:form', null);
+  const [lotesDia, setLotesDia] = useState<Candidato[] | null>(null);
   const [rateio, setRateio] = usePersistente<LinhaRateio[] | null>('lanc:rateio', null);
   const [comRateio, setComRateio] = useState<Set<number>>(new Set());
   const [lotes, setLotes] = useState<Map<number, number>>(new Map());   // lançamento → lote de baixa de boletos
@@ -57,11 +58,18 @@ export default function Lancamentos() {
     setAba('lanc');
     if (m && /^\d{4}-\d{2}$/.test(m)) setMes(m);
     if (t || st) setF(x => ({ ...x, tipo: t || '', status: st || '' }));
+    const volta = params.get('voltar');
     if (id) supabase.from('lancamentos').select('*').eq('id', id).single().then(({ data }) => {
-      if (data) { const l = data as Lancamento; setMes(l.vencimento.slice(0, 7)); abrir({ ...l }); }
+      if (data) { const l = data as Lancamento; setMes(l.vencimento.slice(0, 7)); abrir({ ...l }); if (volta?.startsWith('/')) voltar.current = volta; }
     });
     setParams({}, { replace: true });
   }, []);
+  // Aberto a partir de outra tela (?voltar=): ao fechar o formulário, retorna para ela
+  const voltar = useRef<string | null>(null);
+  const navegar = useNavigate();
+  useEffect(() => {
+    if (voltar.current && !form && !lotesDia) { const v = voltar.current; voltar.current = null; navegar(v); }
+  }, [form, lotesDia]);
   const avisar = (t: string) => { setAviso(t); setTimeout(() => setAviso(''), 3500); };
 
   useEffect(() => {
@@ -144,9 +152,10 @@ export default function Lancamentos() {
     }
     const erroJuros = await sincronizarJuros(res.data as Lancamento);
     if (erroJuros) { setErro('Lançamento salvo, mas a multa/juros não foi lançada: ' + erroJuros); setVersao(v => v + 1); return; }
-    invalidarDicionario(); fechar(); setVersao(v => v + 1);
+    invalidarDicionario();
     const antes = form.id ? lista.find(x => x.id === form.id)?.status : null;
     if (dados.status === 'pago' && antes !== 'pago' && !form.fatura_id) await perguntarLotes([(res.data as Lancamento).id]);
+    fechar(); setVersao(v => v + 1);
   }
 
   /** Baixas do mesmo dia, conta e classificação: oferece reunir no lote do dia */
@@ -193,6 +202,7 @@ export default function Lancamentos() {
 
   async function excluir() {
     if (!form?.id) return;
+    if (!form.titulo_id && form.valor_original != null) { setErro('Esta conta tem pagamentos parciais registrados. Estorne os pagamentos no histórico antes de excluir.'); return; }
     const { error } = form.transferencia_id
       ? await supabase.from('lancamentos').delete().eq('transferencia_id', form.transferencia_id)
       : await supabase.from('lancamentos').delete().eq('id', form.id);
@@ -202,7 +212,6 @@ export default function Lancamentos() {
   }
 
   const [confirmaDesfazer, setConfirmaDesfazer] = useState(false);
-  const [lotesDia, setLotesDia] = useState<Candidato[] | null>(null);
   const baixadoForm = !!form?.id && lista.find(x => x.id === form.id)?.status === 'pago' && !form.fatura_id;
   async function desfazerForm() {
     if (!form?.id) return;

@@ -124,3 +124,25 @@ export async function desfazerBaixa(l: Lancamento): Promise<string | null> {
   if (l.fatura_id) { const { sincronizarFatura } = await import('./faturas'); await sincronizarFatura(l.fatura_id); }
   return null;
 }
+
+/** Motivo para não excluir uma conta em aberto (ou null se pode excluir) */
+export function bloqueioExclusao(l: Lancamento): string | null {
+  if (l.fatura_id) return 'saldo de fatura de cartão: exclua as compras pela tela Cartões';
+  if (l.transferencia_id) return 'transferência: exclua pela tela Lançamentos';
+  if (l.valor_original != null) return 'tem pagamento parcial registrado: estorne os pagamentos antes de excluir';
+  return null;
+}
+
+/** Exclui contas a pagar ou a receber (com a multa/juros vinculada), respeitando os bloqueios */
+export async function excluirContas(ls: Lancamento[]) {
+  let n = 0; const falhas: string[] = [];
+  for (const l of ls) {
+    const b = bloqueioExclusao(l);
+    if (b) { falhas.push(`${l.favorecido}: ${b}`); continue; }
+    const { error } = await supabase.from('lancamentos').delete().eq('id', l.id);
+    if (error) { falhas.push(`${l.favorecido}: ${error.message}`); continue; }
+    if (l.juros_lanc_id) await supabase.from('lancamentos').delete().eq('id', l.juros_lanc_id);
+    n++;
+  }
+  return { n, falhas };
+}

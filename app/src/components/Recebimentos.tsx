@@ -10,6 +10,9 @@ import { registrarPagamento } from '../lib/titulos';
 import { invalidarDicionario } from '../lib/sugestao';
 import { pendenciasDeLote, reunirNoLote, temOQueReunir, type Candidato, type TarifaLote } from '../lib/lotes';
 import ConfirmarLotes from './ConfirmarLotes';
+import { useNavigate } from 'react-router-dom';
+import { ModalAlterarLote } from './LoteLancamentos';
+import { BarraSelecao, ModalExcluirContas } from './AcoesSelecao';
 
 export interface Cad { contas: Conta[]; grupos: Grupo[]; subgrupos: Subgrupo[]; centros: CentroCusto[]; beneficiarios: Beneficiario[] }
 export interface Tarifa { houve: boolean; unit: string; benef: string }
@@ -61,6 +64,9 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
   const [proc, setProc] = useState(false);
   const [versao, setVersao] = useState(0);
   const [lotes, setLotes] = useState<{ pend: Candidato[]; tarifa: TarifaLote | null; texto: string } | null>(null);
+  const [acao, setAcao] = useState<'' | 'alterar' | 'excluir'>('');
+  const nav = useNavigate();
+  const editar = (l: Lancamento) => nav(`/lancamentos?abrir=${l.id}&voltar=/receber`);
   const fim = `${ano}-${String(mes).padStart(2, '0')}-${String(new Date(ano, mes, 0).getDate()).padStart(2, '0')}`, ini = `${ano}-${String(mes).padStart(2, '0')}-01`;
 
   useEffect(() => {
@@ -120,16 +126,22 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={vencidas} onChange={e => setVencidas(e.target.checked)} /> Incluir vencidas de meses anteriores</label>
         <span style={{ flex: 1 }} />
         {msg && <span className="ok">{msg}</span>}
-        {sel.length > 0 && <span style={{ fontSize: 13, color: 'var(--muted)' }}>{sel.length} selecionada(s): {brl(marcados.reduce((a, l) => a + Number(l.valor), 0))}</span>}
-        <button className="btn" disabled={!marcados.length} onClick={abrirBaixa}>Baixar selecionadas</button>
       </div>
+      <BarraSelecao n={marcados.length} total={marcados.reduce((a, l) => a + Number(l.valor), 0)} aoLimpar={() => setSel([])}>
+        <button className="btn ghost mini" onClick={() => (marcados.length === 1 ? editar(marcados[0]) : setAcao('alterar'))}>{marcados.length > 1 ? 'Alterar em lote' : 'Alterar'}</button>
+        <button className="btn mini" onClick={abrirBaixa}>Baixar</button>
+        <button className="btn ghost mini" style={{ color: 'var(--neg)' }} onClick={() => setAcao('excluir')}>Excluir</button>
+      </BarraSelecao>
+      {acao === 'alterar' && <ModalAlterarLote itens={marcados} cad={cad} hoje={hoje} aoFechar={() => setAcao('')} aoSalvar={n => { setAcao(''); setSel([]); setMsg(n + ' conta(s) alterada(s).'); setVersao(v => v + 1); aoMudar(); }} />}
+      {acao === 'excluir' && <ModalExcluirContas itens={marcados} aoFechar={() => setAcao('')} aoConcluir={(m, f) => { setAcao(''); setSel([]); setMsg(m); if (f.length) setErro('Não excluídas: ' + f.join(' · ')); setVersao(v => v + 1); aoMudar(); }} />}
+      {erro && !baixa && <div className="err" style={{ marginBottom: 10 }}>{erro}</div>}
       {linhas.length === 0 ? <div className="empty">Nenhuma conta a receber em aberto até {dataBR(fim)}.</div> : (
         <table className="compacta">
           <thead><tr><th className="c"><input type="checkbox" checked={linhas.every(l => sel.includes(l.id))} onChange={e => setSel(e.target.checked ? [...new Set([...sel, ...linhas.map(l => l.id)])] : sel.filter(id => !linhas.some(l => l.id === id)))} /></th>
             <th>Vencimento</th><th>Cliente / Origem</th><th>Grupo</th><th>Ref.</th><th className="r">Valor</th><th>Status</th></tr></thead>
           <tbody>{linhas.map(l => { const s = statusEfetivo(l.status, l.vencimento); return (
-            <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => setSel(sel.includes(l.id) ? sel.filter(x => x !== l.id) : [...sel, l.id])}>
-              <td className="c"><input type="checkbox" readOnly checked={sel.includes(l.id)} /></td>
+            <tr key={l.id} className="clicavel" title="Alterar a conta" onClick={() => editar(l)} style={sel.includes(l.id) ? { background: 'var(--gold-soft)' } : undefined}>
+              <td className="c" onClick={e => { e.stopPropagation(); setSel(sel.includes(l.id) ? sel.filter(x => x !== l.id) : [...sel, l.id]); }}><input type="checkbox" readOnly checked={sel.includes(l.id)} /></td>
               <td>{dataBR(l.vencimento)}</td><td>{l.favorecido}</td><td>{nomeG(l.grupo_id)}</td><td>{l.referencia || '·'}</td>
               <td className="r pos">{brl(l.valor)}{l.valor_original != null && <div style={{ fontSize: 11, color: 'var(--muted)' }}>saldo de {brl(l.valor_original)}</div>}</td>
               <td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td></tr>); })}</tbody>

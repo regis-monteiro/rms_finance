@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase, type Lancamento } from '../lib/supabase';
 import { brl, dataBR, diaMes, hojeISO, somaDias, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
 import { useCadastros } from '../lib/useCadastros';
@@ -13,6 +13,8 @@ import { registrarPagamento } from '../lib/titulos';
 import { pendenciasDeLote, temOQueReunir, type Candidato } from '../lib/lotes';
 import ConfirmarLotes from '../components/ConfirmarLotes';
 import { ModalLancarContas } from '../components/LancarContas';
+import { ModalAlterarLote } from '../components/LoteLancamentos';
+import { BarraSelecao, ModalBaixarVarias, ModalExcluirContas } from '../components/AcoesSelecao';
 
 const SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
@@ -28,6 +30,10 @@ export default function Pagar() {
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
   const [lotesDia, setLotesDia] = useState<Candidato[] | null>(null);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [erroLista, setErroLista] = useState('');
+  const [acao, setAcao] = useState<'' | 'alterar' | 'baixar' | 'excluir'>('');
+  const nav = useNavigate();
 
   useEffect(() => {
     supabase.from('lancamentos').select('*').eq('tipo', 'saida').neq('status', 'pago').order('vencimento').order('id')
@@ -41,6 +47,17 @@ export default function Pagar() {
     (!f.conta || (f.conta === 'sem' ? !l.conta_id : String(l.conta_id) === f.conta)) &&
     (!f.grupo || String(l.grupo_id) === f.grupo) && (!f.status || statusEfetivo(l.status, l.vencimento) === f.status)), [lista, f, limite]);
 
+  const marcados = lista.filter(l => sel.has(l.id));
+  const alternar = (id: number, on: boolean) => { const n = new Set(sel); on ? n.add(id) : n.delete(id); setSel(n); };
+  const avisar = (m: string) => { setAviso(m); setTimeout(() => setAviso(''), 6000); };
+  /** Alterar uma conta: a edição completa abre em Lançamentos e volta para esta tela ao fechar */
+  const editar = (l: Lancamento) => nav(l.fatura_id ? '/cartoes?fatura=' + l.fatura_id : `/lancamentos?abrir=${l.id}&voltar=/pagar`);
+  const abrirBaixa = (l: Lancamento) => { setErro(''); setBaixa({ l, data: hoje, conta: l.conta_id ? String(l.conta_id) : '', valor: String(l.valor), juros: '' }); };
+  function executar(a: 'alterar' | 'baixar' | 'excluir') {
+    if (a === 'alterar' && marcados.length === 1) return editar(marcados[0]);
+    if (a === 'baixar' && marcados.length === 1) return abrirBaixa(marcados[0]);
+    setAcao(a);
+  }
   const soma = (a: Lancamento[]) => a.reduce((s, l) => s + Number(l.valor), 0);
   const vencidas = lista.filter(l => l.vencimento < hoje);
   const hojeL = lista.filter(l => l.vencimento === hoje);
@@ -80,6 +97,9 @@ export default function Pagar() {
   return (
     <>
       <Cabecalho titulo="Contas a pagar" sub="Saídas em aberto, uma a uma, incluindo saldos de faturas de cartão">{aviso && <span className="ok">{aviso}</span>}<button className="btn gold" onClick={() => setLote(true)}>+ Novas contas a pagar</button></Cabecalho>
+      {acao === 'alterar' && <ModalAlterarLote itens={marcados} cad={{ contas, grupos, subgrupos, beneficiarios }} hoje={hoje} aoFechar={() => setAcao('')} aoSalvar={n => { setAcao(''); setSel(new Set()); avisar(n + ' conta(s) alterada(s).'); setVersao(v => v + 1); }} />}
+      {acao === 'excluir' && <ModalExcluirContas itens={marcados} aoFechar={() => setAcao('')} aoConcluir={(m, f) => { setAcao(''); setSel(new Set()); avisar(m); if (f.length) setErroLista('Não excluídas: ' + f.join(' · ')); setVersao(v => v + 1); }} />}
+      {acao === 'baixar' && <ModalBaixarVarias itens={marcados} contas={contas} hoje={hoje} aoFechar={() => setAcao('')} aoConcluir={async (ids, m) => { setAcao(''); setSel(new Set()); avisar(m); setVersao(v => v + 1); const p = (await pendenciasDeLote(ids)).filter(temOQueReunir); if (p.length) setLotesDia(p); }} />}
       {lotesDia && <ConfirmarLotes pendentes={lotesDia} cad={{ contas, grupos, subgrupos }} aoConcluir={m => { setLotesDia(null); if (m) { setAviso(m); setTimeout(() => setAviso(''), 6000); } }} />}
       {lote && <ModalLancarContas tipo="saida" cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLote(false)} aoSalvar={m => { setLote(false); setAviso(m); setTimeout(() => setAviso(''), 6000); setVersao(v => v + 1); }} />}
       <div className="grid g4">
@@ -95,21 +115,28 @@ export default function Pagar() {
           <select value={f.grupo} onChange={e => setF({ ...f, grupo: e.target.value })}><option value="">Todos os grupos</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select>
           <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })}><option value="">Todos os status</option>{(['vencido', 'previsto', 'confirmado', 'agendado'] as const).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select>
         </div>
+        {erroLista && <div className="err" style={{ marginBottom: 10 }} onClick={() => setErroLista('')}>{erroLista}</div>}
+        <BarraSelecao n={marcados.length} total={soma(marcados)} aoLimpar={() => setSel(new Set())}>
+          <button className="btn ghost mini" onClick={() => executar('alterar')}>{marcados.length > 1 ? 'Alterar em lote' : 'Alterar'}</button>
+          <button className="btn mini" onClick={() => executar('baixar')}>Baixar</button>
+          <button className="btn ghost mini" style={{ color: 'var(--neg)' }} onClick={() => executar('excluir')}>Excluir</button>
+        </BarraSelecao>
         {dias.length === 0 ? <div className="empty">Nada em aberto neste filtro.</div> : (
           <table>
-            <thead><tr><th>Vencimento</th><th>Fornecedor / Beneficiário</th><th>Grupo</th><th>Subgrupo</th><th>Conta</th><th>Ref.</th><th className="r">Valor</th><th>Status</th><th className="r">Ação</th></tr></thead>
+            <thead><tr><th className="c"><input type="checkbox" checked={linhas.length > 0 && linhas.every(l => sel.has(l.id))} onChange={e => setSel(e.target.checked ? new Set(linhas.map(l => l.id)) : new Set())} /></th><th>Vencimento</th><th>Fornecedor / Beneficiário</th><th>Grupo</th><th>Subgrupo</th><th>Conta</th><th>Ref.</th><th className="r">Valor</th><th>Status</th><th className="r">Ação</th></tr></thead>
             <tbody>{dias.map(([d, ls]) => [
-              <tr key={d}><td colSpan={9} style={{ background: '#FBF9F3', fontWeight: 600, fontSize: 12.5, color: 'var(--navy)' }}>
+              <tr key={d}><td colSpan={10} style={{ background: '#FBF9F3', fontWeight: 600, fontSize: 12.5, color: 'var(--navy)' }}>
                 {dataBR(d)} · {SEMANA[new Date(d + 'T12:00:00').getDay()]}<span style={{ float: 'right' }}>{brl(soma(ls))}</span></td></tr>,
               ...ls.map(l => { const s = statusEfetivo(l.status, l.vencimento); return (
-                <tr key={l.id}>
+                <tr key={l.id} className="clicavel" title={l.fatura_id ? 'Abrir a fatura' : 'Alterar a conta'} onClick={() => editar(l)} style={sel.has(l.id) ? { background: 'var(--gold-soft)' } : undefined}>
+                  <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => alternar(l.id, e.target.checked)} /></td>
                   <td>{diaMes(l.vencimento)}</td><td>{l.favorecido}{l.observacao && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{l.observacao}</div>}</td>
                   <td>{nome(grupos, l.grupo_id)}</td><td>{nome(subgrupos, l.subgrupo_id) || '·'}</td>
                   <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{l.referencia || '·'}</td>
                   <td className="r">{brl(l.valor)}{l.valor_original != null && <div style={{ fontSize: 11, color: 'var(--muted)' }}>saldo de {brl(l.valor_original)}</div>}</td><td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td>
-                  <td className="r" style={{ whiteSpace: 'nowrap' }}>
+                  <td className="r" style={{ whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
                     {l.fatura_id && <Link to={'/cartoes?fatura=' + l.fatura_id} className="btn ghost" style={{ padding: '4px 10px', textDecoration: 'none', marginRight: 6 }}>Fatura</Link>}
-                    <button className="btn ghost" style={{ padding: '4px 10px' }} onClick={() => { setErro(''); setBaixa({ l, data: hoje, conta: l.conta_id ? String(l.conta_id) : '', valor: String(l.valor), juros: '' }); }}>Baixar</button>
+                    <button className="btn ghost" style={{ padding: '4px 10px' }} onClick={() => abrirBaixa(l)}>Baixar</button>
                   </td>
                 </tr>); })])}</tbody>
           </table>
