@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase, type Lancamento } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useCadastros } from '../lib/useCadastros';
 import { brl, dataBR, hojeISO, STATUS_LABEL, statusEfetivo } from '../lib/format';
-import { gerarExcel, gerarPDF, type Relatorio, type Linha } from '../lib/relatorios';
+import { gerarExcel, gerarPDF, type Relatorio, type Linha, type Coluna } from '../lib/relatorios';
 import { MESES_LONGOS } from '../lib/analises';
 import DataBR from '../components/DataBR';
 import { Cabecalho } from '../components/Layout';
@@ -39,6 +39,9 @@ export default function Relatorios() {
   const [opt, setOpt] = useState({ vencidas: true, tipoL: '', statusL: '', base: 'caixa' });
   const [gerando, setGerando] = useState<'' | 'pdf' | 'xlsx'>('');
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; m: string } | null>(null);
+  const [previa, setPrevia] = useState<{ r: Relatorio | null; carregando: boolean; erro: string }>({ r: null, carregando: true, erro: '' });
+  const [todasLinhas, setTodasLinhas] = useState<Set<number>>(new Set());
+  const rodada = useRef(0);
 
   const nome = (arr: { id: number; nome: string }[], id: number | null) => arr.find(x => x.id === id)?.nome || '';
   const periodo = `${dataBR(de)} a ${dataBR(ate)}`;
@@ -140,6 +143,19 @@ export default function Relatorios() {
     setGerando('');
   }
 
+  // Visualização simplificada: atualiza sozinha quando muda o relatório ou algum filtro
+  useEffect(() => {
+    if (!contas.length || !grupos.length) return;
+    const n = ++rodada.current;
+    setPrevia(p => ({ ...p, carregando: true, erro: '' }));
+    const t = setTimeout(async () => {
+      if (de > ate) { setPrevia({ r: null, carregando: false, erro: 'A data inicial é maior que a final.' }); return; }
+      try { const r = await montar(); if (n === rodada.current) { setPrevia({ r, carregando: false, erro: '' }); setTodasLinhas(new Set()); } }
+      catch (e) { if (n === rodada.current) setPrevia({ r: null, carregando: false, erro: (e as Error).message }); }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [tipo, de, ate, selContas, selCartoes, opt, contas, grupos, subgrupos, cartoes]);
+
   const marcar = <T,>(s: Set<T>, v: T, on: boolean, set: (n: Set<T>) => void) => { const n = new Set(s); on ? n.add(v) : n.delete(v); set(n); };
   return (
     <>
@@ -185,7 +201,54 @@ export default function Relatorios() {
           <button className="btn" disabled={!!gerando} onClick={() => gerar('pdf')}>{gerando === 'pdf' ? 'Gerando…' : 'Exportar PDF'}</button>
         </div>
       </div>
+      <Previa estado={previa} todas={todasLinhas} mostrarTodas={i => setTodasLinhas(new Set([...todasLinhas, i]))} />
       <p style={{ fontSize: 12, color: 'var(--muted)' }}>Todo relatório sai com o logotipo da RMS, o nome do relatório, o período, a data e hora da emissão e o usuário que solicitou. O DRE e o Dashboard têm exportação própria, com opção de assinatura.</p>
     </>
+  );
+}
+
+const LIMITE = 100;
+function celula(c: Coluna, v: unknown) {
+  if (v == null || v === '') return '';
+  if (c.tipo === 'moeda') return brl(Number(v));
+  if (c.tipo === 'data') return dataBR(String(v));
+  if (c.tipo === 'pct') return (Number(v) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  if (c.tipo === 'numero') return Number(v).toLocaleString('pt-BR');
+  return String(v);
+}
+
+/** Prévia em tela do relatório, sem cabeçalho de emissão */
+function Previa({ estado, todas, mostrarTodas }: { estado: { r: Relatorio | null; carregando: boolean; erro: string }; todas: Set<number>; mostrarTodas: (i: number) => void }) {
+  const { r, carregando, erro } = estado;
+  return (
+    <div className="card mt" style={{ opacity: carregando && r ? 0.55 : 1, transition: 'opacity .2s' }}>
+      <h3>Visualização{r ? ` · ${r.titulo}` : ''}{carregando && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>atualizando…</span>}</h3>
+      {erro ? <div className="err">{erro}</div> : !r ? <div className="empty">Carregando…</div> : <>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>{r.periodo}{r.filtros ? ` · ${r.filtros}` : ''}</div>
+        {r.resumo && <div className="grid g4" style={{ marginBottom: 12 }}>{r.resumo.map(x => (
+          <div key={x.rotulo} className="card kpi" style={{ padding: '10px 14px' }}><div className="lbl">{x.rotulo}</div><div className="val" style={{ fontSize: 18 }}>{x.valor}</div></div>))}</div>}
+        {r.secoes.map((s, i) => {
+          const corpo = s.linhas.filter(l => !l._estilo || l._estilo === 'grupo'), rodape = s.linhas.filter(l => l._estilo && l._estilo !== 'grupo');
+          const cheio = todas.has(i) || corpo.length <= LIMITE;
+          const visiveis = cheio ? s.linhas : [...s.linhas.filter(l => !l._estilo || l._estilo === 'grupo').slice(0, LIMITE), ...rodape];
+          return (
+            <div key={i} style={{ marginTop: i ? 16 : 0 }}>
+              {s.titulo && <div style={{ fontWeight: 600, color: 'var(--navy)', margin: '4px 0 6px' }}>{s.titulo}</div>}
+              {corpo.length === 0 && rodape.length <= 1 ? <div className="empty">Nada a mostrar neste filtro.</div> : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="compacta">
+                    <thead><tr>{s.colunas.map(c => <th key={c.chave} className={c.tipo === 'moeda' || c.tipo === 'pct' || c.tipo === 'numero' ? 'r' : ''}>{c.titulo}</th>)}</tr></thead>
+                    <tbody>{visiveis.map((l, j) => (
+                      <tr key={j} style={l._estilo === 'total' ? { fontWeight: 700, background: '#FBF9F3' } : l._estilo === 'sub' ? { fontWeight: 600, background: '#FBF9F3' } : undefined}>
+                        {s.colunas.map((c, k) => { const v = l[c.chave], num = c.tipo === 'moeda' || c.tipo === 'pct' || c.tipo === 'numero';
+                          return <td key={c.chave} className={num ? 'r' + (c.tipo === 'moeda' && Number(v) < 0 ? ' neg' : '') : ''} style={l._estilo === 'grupo' && k === 0 ? { paddingLeft: 22 } : undefined}>{celula(c, v)}</td>; })}
+                      </tr>))}</tbody>
+                  </table>
+                  {!cheio && <button className="btn ghost mini mt" onClick={() => mostrarTodas(i)}>Mostrar todas as {corpo.length.toLocaleString('pt-BR')} linhas (exibindo {LIMITE})</button>}
+                </div>)}
+            </div>);
+        })}
+      </>}
+    </div>
   );
 }
