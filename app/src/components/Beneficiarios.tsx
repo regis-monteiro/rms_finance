@@ -2,14 +2,27 @@ import { useMemo, useState } from 'react';
 import { supabase, type Beneficiario, type Grupo, type Subgrupo } from '../lib/supabase';
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { ImportarCadastro } from './ImportarCadastro';
+import { BarraSelecao } from './AcoesSelecao';
 import { documentoValido, formatarCep, formatarDocumento, soDigitos, tipoPessoa } from '../lib/documento';
+
+/** Exclui cadastros sem lançamentos; os que têm lançamentos ou lotes vinculados são mantidos */
+export async function excluirBeneficiarios(ids: number[]) {
+  const excluidos: number[] = [], emUso: number[] = [], falhas: string[] = [];
+  for (let i = 0; i < ids.length; i += 10) {
+    await Promise.all(ids.slice(i, i + 10).map(async id => {
+      const { error } = await supabase.from('beneficiarios').delete().eq('id', id);
+      if (!error) excluidos.push(id); else if (error.code === '23503') emUso.push(id); else falhas.push(error.message);
+    }));
+  }
+  return { excluidos, emUso, falhas };
+}
 
 const PIX = { cpf_cnpj: 'CPF/CNPJ', email: 'E-mail', telefone: 'Telefone', aleatoria: 'Chave aleatória' } as Record<string, string>;
 const UFS = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
 type Form = Partial<Beneficiario>;
 
-export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, aoFechar: fechar, rascunho = 'benef:form' }: {
-  inicial: Form; grupos: Grupo[]; subgrupos: Subgrupo[]; aoSalvar: (b: Beneficiario) => void; aoFechar: () => void; rascunho?: string;
+export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, aoFechar: fechar, aoExcluir, rascunho = 'benef:form' }: {
+  inicial: Form; grupos: Grupo[]; subgrupos: Subgrupo[]; aoSalvar: (b: Beneficiario) => void; aoFechar: () => void; aoExcluir?: () => void; rascunho?: string;
 }) {
   const [f, setF] = usePersistente<Form>(rascunho, () => ({ ...inicial, documento: inicial.documento ? formatarDocumento(inicial.documento) : '' }));
   const aoFechar = () => { limparRascunhos(rascunho); fechar(); };
@@ -17,6 +30,14 @@ export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, 
   const [erro, setErro] = useState('');
   const set = (k: keyof Beneficiario, v: unknown) => setF(x => ({ ...x, [k]: v }));
   const docOk = documentoValido(f.documento || '');
+  const [confExcluir, setConfExcluir] = useState(false);
+  async function excluir() {
+    setConfExcluir(false); setErro('');
+    const r = await excluirBeneficiarios([f.id!]);
+    if (r.emUso.length) { setErro('Este cadastro tem lançamentos vinculados e não pode ser excluído. Para tirá-lo das listas, desmarque "Ativo" e salve.'); return; }
+    if (r.falhas.length) { setErro(r.falhas[0]); return; }
+    limparRascunhos(rascunho); fechar(); aoExcluir?.();
+  }
 
   async function buscarCep(cep: string) {
     const d = soDigitos(cep); if (d.length !== 8) return;
@@ -73,7 +94,12 @@ export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, 
           <label className="full">Observações<input value={f.observacao || ''} onChange={e => set('observacao', e.target.value)} /></label>
           {f.id && <label className="full" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={f.ativo ?? true} onChange={e => set('ativo', e.target.checked)} /> Ativo</label>}
           {erro && <div className="err full">{erro}</div>}
-          <div className="actions full"><button type="button" className="btn ghost" onClick={aoFechar}>Cancelar</button><button className="btn">Salvar</button></div>
+          <div className="actions full">
+            {f.id && (!confExcluir ? <button type="button" className="btn ghost" style={{ marginRight: 'auto', color: 'var(--neg)' }} onClick={() => setConfExcluir(true)}>Excluir</button>
+              : <span style={{ marginRight: 'auto', display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>Excluir este cadastro?
+                <button type="button" className="btn mini" style={{ background: 'var(--neg)', borderColor: 'var(--neg)' }} onClick={excluir}>Sim, excluir</button>
+                <button type="button" className="btn ghost mini" onClick={() => setConfExcluir(false)}>Não</button></span>)}
+            <button type="button" className="btn ghost" onClick={aoFechar}>Cancelar</button><button className="btn">Salvar</button></div>
         </form>
       </div>
     </div>
@@ -88,6 +114,28 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
   const [edit, setEdit] = usePersistente<Form | null>('cad:benef-edit', null);
   const [importar, setImportar] = useState(false);
   const [aviso, setAviso] = useState('');
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [confExcluir, setConfExcluir] = useState(false);
+  const [proc, setProc] = useState(false);
+  const [mantidos, setMantidos] = useState<number[]>([]);
+  const avisar = (m: string) => { setAviso(m); setTimeout(() => setAviso(''), 8000); };
+  const marcados = beneficiarios.filter(b => sel.has(b.id));
+  const alternar = (id: number, on: boolean) => { const n = new Set(sel); on ? n.add(id) : n.delete(id); setSel(n); };
+  async function situacao(ids: number[], ativo: boolean) {
+    setProc(true);
+    const { error } = await supabase.from('beneficiarios').update({ ativo }).in('id', ids);
+    setProc(false);
+    if (error) { avisar(error.message); return; }
+    setSel(new Set()); setMantidos([]); avisar(`${ids.length} cadastro(s) ${ativo ? 'ativado(s)' : 'inativado(s)'}.`); recarregar();
+  }
+  async function excluirSel() {
+    setProc(true); setConfExcluir(false);
+    const r = await excluirBeneficiarios([...sel]);
+    setProc(false);
+    setSel(new Set(r.emUso)); setMantidos(r.emUso);
+    avisar(`${r.excluidos.length} cadastro(s) excluído(s).` + (r.falhas.length ? ' Erros: ' + r.falhas.slice(0, 2).join(' · ') : ''));
+    recarregar();
+  }
   const lista = useMemo(() => {
     const q = busca.toLowerCase(), qd = soDigitos(busca);
     return beneficiarios.filter(b => (inativos || b.ativo) && (!busca || b.nome.toLowerCase().includes(q) || (b.nome_fantasia || '').toLowerCase().includes(q) || (qd && b.documento.includes(qd))));
@@ -103,10 +151,24 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
         <button className="btn ghost" onClick={() => setImportar(true)}>Importar planilha</button>
         <button className="btn gold" onClick={() => setEdit({ ativo: true })}>+ Novo fornecedor / cliente</button>
       </div>
+      {mantidos.length > 0 && <div className="proto" style={{ margin: '0 0 10px', fontSize: 13, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {mantidos.length} cadastro(s) têm lançamentos vinculados e foram mantidos (continuam selecionados).
+        <button className="btn mini" disabled={proc} onClick={() => situacao(mantidos, false)}>Inativar esses {mantidos.length}</button>
+        <button className="btn ghost mini" onClick={() => setMantidos([])}>Fechar</button></div>}
+      <BarraSelecao n={marcados.length} aoLimpar={() => { setSel(new Set()); setConfExcluir(false); setMantidos([]); }}>
+        {!confExcluir ? <>
+          <button className="btn ghost mini" disabled={proc} onClick={() => situacao([...sel], true)}>Ativar</button>
+          <button className="btn ghost mini" disabled={proc} onClick={() => situacao([...sel], false)}>Inativar</button>
+          <button className="btn ghost mini" style={{ color: 'var(--neg)' }} disabled={proc} onClick={() => setConfExcluir(true)}>{proc ? 'Processando…' : 'Excluir'}</button>
+        </> : <span style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>Excluir {marcados.length} cadastro(s)? Só saem os que não têm lançamentos.
+          <button className="btn mini" style={{ background: 'var(--neg)', borderColor: 'var(--neg)' }} onClick={excluirSel}>Sim, excluir</button>
+          <button className="btn ghost mini" onClick={() => setConfExcluir(false)}>Não</button></span>}
+      </BarraSelecao>
       {lista.length === 0 ? <div className="empty" style={{ padding: 30 }}>{beneficiarios.length ? 'Nenhum cadastro encontrado.' : 'Nenhum fornecedor ou cliente cadastrado ainda.'}</div> : (
-        <table><thead><tr><th>Nome</th><th>CPF / CNPJ</th><th>Chave PIX</th><th>Grupo padrão</th><th>Contato</th><th>Situação</th></tr></thead>
+        <table><thead><tr><th className="c"><input type="checkbox" checked={lista.length > 0 && lista.every(b => sel.has(b.id))} onChange={e => setSel(e.target.checked ? new Set([...sel, ...lista.map(b => b.id)]) : new Set([...sel].filter(id => !lista.some(b => b.id === id))))} /></th><th>Nome</th><th>CPF / CNPJ</th><th>Chave PIX</th><th>Grupo padrão</th><th>Contato</th><th>Situação</th></tr></thead>
           <tbody>{lista.map(b => (
-            <tr key={b.id} style={{ cursor: 'pointer' }} onClick={() => setEdit(b)}>
+            <tr key={b.id} style={{ cursor: 'pointer', ...(sel.has(b.id) ? { background: 'var(--gold-soft)' } : {}) }} onClick={() => setEdit(b)}>
+              <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(b.id)} onChange={e => alternar(b.id, e.target.checked)} /></td>
               <td><b>{b.nome}</b>{b.nome_fantasia && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{b.nome_fantasia}</div>}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{formatarDocumento(b.documento)} <span className="tag">{tipoPessoa(b.documento)}</span></td>
               <td>{b.pix_chave ? <><span className="tag">{PIX[b.pix_tipo || ''] || 'PIX'}</span> {b.pix_chave}</> : '·'}</td>
@@ -116,7 +178,7 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
       )}
       <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>O mesmo cadastro serve como fornecedor / beneficiário nos pagamentos e como cliente / origem nos recebimentos. A partir de 01/01/2027, todo pagamento precisa de um fornecedor / beneficiário cadastrado (exceto faturas de cartão e transferências entre contas da RMS).</p>
       {importar && <ImportarCadastro existentes={beneficiarios} aoFechar={() => setImportar(false)} aoConcluir={m => { setImportar(false); setAviso(m); setTimeout(() => setAviso(''), 8000); recarregar(); }} />}
-      {edit && <FormBeneficiario inicial={edit} grupos={grupos} subgrupos={subgrupos} aoFechar={() => setEdit(null)} aoSalvar={() => { setEdit(null); recarregar(); }} />}
+      {edit && <FormBeneficiario inicial={edit} grupos={grupos} subgrupos={subgrupos} aoFechar={() => setEdit(null)} aoSalvar={() => { setEdit(null); recarregar(); }} aoExcluir={() => { avisar('Cadastro excluído.'); recarregar(); }} />}
     </>
   );
 }

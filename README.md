@@ -50,6 +50,7 @@ Aplicativo de controle financeiro interno da RMS Organização Contábil.
 - Versão 1.2: lançamento manual em lote, coluna e ordem por data de pagamento, lotes de recebimento editáveis e desfazer baixa sem excluir a conta (script `supabase/017_desfazer_baixa.sql`).
 - Versão 1.3: lote do dia: baixas do mesmo dia, na mesma conta e com o mesmo grupo e subgrupo (recebimentos e pagamentos) entram no lote existente, mediante confirmação (script `supabase/018_lotes_do_dia.sql`).
 - Versão 1.4: seleção com barra de ações (alterar, baixar, excluir) em Contas a pagar, Contas a receber e compras do cartão; clique na linha abre a edição. Exclusão bloqueada para contas com pagamento parcial, saldos de fatura e transferências.
+- Versão 1.5: Fornecedores / Clientes com seleção para ativar, inativar e excluir em lote (só exclui cadastros sem lançamentos) e botão Excluir no formulário.
 - Versão 0.9: associação de várias linhas do extrato a um lançamento do app (e o contrário) na conciliação, com somas iguais; rótulos Fornecedor / Beneficiário nos pagamentos e Cliente / Origem nos recebimentos (script `supabase/012_associacao_conciliacao.sql`).
 
 Configuração: ver `docs/configuracao.md`.
