@@ -1,4 +1,5 @@
 import { supabase, type Lancamento } from './supabase';
+import { dadosDesconto, rotuloDesconto } from './descontos';
 
 /** Lote de baixas do dia: mesma data, mesma conta, mesma natureza e mesmo grupo/subgrupo */
 export interface Chave { data: string; conta_id: number; natureza: 'entrada' | 'saida'; grupo_id: number; subgrupo_id: number | null }
@@ -33,23 +34,34 @@ export async function candidatos(chave: Chave, novos: Lancamento[]): Promise<Can
   const ids = ((mesmos as Lancamento[]) || []).map(l => l.id);
   const { data: emLote } = ids.length ? await supabase.from('lotes_recebimento_itens').select('lancamento_id').in('lancamento_id', ids) : { data: [] };
   const ocupados = new Set(((emLote as { lancamento_id: number }[]) || []).map(x => x.lancamento_id));
-  const { data: cons } = ids.length ? await supabase.from('lotes_recebimento').select('lanc_consolidado_id,lanc_tarifa_id').or(`lanc_consolidado_id.in.(${ids.join(',')}),lanc_tarifa_id.in.(${ids.join(',')})`) : { data: [] };
-  for (const x of (cons as { lanc_consolidado_id: number | null; lanc_tarifa_id: number | null }[]) || []) { if (x.lanc_consolidado_id) ocupados.add(x.lanc_consolidado_id); if (x.lanc_tarifa_id) ocupados.add(x.lanc_tarifa_id); }
+  const { data: cons } = ids.length ? await supabase.from('lotes_recebimento').select('lanc_consolidado_id,lanc_tarifa_id,lanc_desconto_id').or(`lanc_consolidado_id.in.(${ids.join(',')}),lanc_tarifa_id.in.(${ids.join(',')}),lanc_desconto_id.in.(${ids.join(',')})`) : { data: [] };
+  for (const x of (cons as { lanc_consolidado_id: number | null; lanc_tarifa_id: number | null; lanc_desconto_id: number | null }[]) || []) for (const v of [x.lanc_consolidado_id, x.lanc_tarifa_id, x.lanc_desconto_id]) if (v) ocupados.add(v);
   const novosIds = new Set(novos.map(n => n.id));
   // itens recém-baixados que já estão num lote (ex.: criado na mesma operação) não entram de novo
   const livres = novos.filter(n => !ocupados.has(n.id));
-  const avulsos = ((mesmos as Lancamento[]) || []).filter(l => !ocupados.has(l.id) && !novosIds.has(l.id) && !/^tarifa de/.test(l.observacao || ''));
+  const avulsos = ((mesmos as Lancamento[]) || []).filter(l => !ocupados.has(l.id) && !novosIds.has(l.id) && !/^(tarifa de|desconto (concedido|obtido))/.test(l.observacao || ''));
   return { chave, novos: livres, lote: ((lotes as LoteDia[]) || [])[0] || null, avulsos };
 }
 
-/** Recalcula total, quantidade e tarifa de um lote pelos itens atuais */
+/** Recalcula total, quantidade, tarifa e desconto de um lote pelos itens atuais */
 export async function recalcularLote(loteId: number) {
   const { data: lote } = await supabase.from('lotes_recebimento').select('*').eq('id', loteId).single();
-  const { data: itens } = await supabase.from('lotes_recebimento_itens').select('valor').eq('lote_id', loteId);
-  const n = (itens || []).length, total = r2(((itens as { valor: number }[]) || []).reduce((a, x) => a + Number(x.valor), 0));
-  await supabase.from('lotes_recebimento').update({ quantidade: n, total }).eq('id', loteId);
-  const lt = lote as { lanc_tarifa_id: number | null; tarifa_unitaria: number } | null;
-  if (lt?.lanc_tarifa_id && Number(lt.tarifa_unitaria) > 0)
+  const { data: itens } = await supabase.from('lotes_recebimento_itens').select('valor,desconto,beneficiario_id,nome').eq('lote_id', loteId);
+  const its = (itens as { valor: number; desconto: number | null; beneficiario_id: number | null; nome: string | null }[]) || [];
+  const n = its.length, total = r2(its.reduce((a, x) => a + Number(x.valor), 0)), desc = r2(its.reduce((a, x) => a + Number(x.desconto || 0), 0));
+  const lt = lote as { data: string; conta_id: number; natureza?: 'entrada' | 'saida'; lanc_tarifa_id: number | null; lanc_desconto_id: number | null; tarifa_unitaria: number } | null;
+  if (!lt) return;
+  let lancDesc = lt.lanc_desconto_id;
+  // Descontos do lote: um lançamento só, com a soma
+  if (desc > 0) {
+    const comDesc = its.filter(x => Number(x.desconto || 0) > 0);
+    const d = await dadosDesconto(lt.natureza || 'entrada', desc, lt.data, lt.conta_id, comDesc.length === 1 ? comDesc[0].nome || 'Desconto' : `Descontos do lote (${comDesc.length})`,
+      comDesc[0]?.beneficiario_id ?? null, `${rotuloDesconto(lt.natureza || 'entrada')} em lote`);
+    if (lancDesc) await supabase.from('lancamentos').update(d).eq('id', lancDesc);
+    else { const r = await supabase.from('lancamentos').insert(d).select('id').single(); if (r.error) throw new Error('Desconto: ' + r.error.message); lancDesc = r.data.id; }
+  } else if (lancDesc) { await supabase.from('lancamentos').delete().eq('id', lancDesc); lancDesc = null; }
+  await supabase.from('lotes_recebimento').update({ quantidade: n, total, desconto: desc, lanc_desconto_id: lancDesc }).eq('id', loteId);
+  if (lt.lanc_tarifa_id && Number(lt.tarifa_unitaria) > 0)
     await supabase.from('lancamentos').update({ valor: r2(n * Number(lt.tarifa_unitaria)), referencia: `Tarifa de ${n} boleto(s)`,
       observacao: `tarifa de ${n} boleto(s) × ${Number(lt.tarifa_unitaria).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, atualizado_em: new Date().toISOString() }).eq('id', lt.lanc_tarifa_id);
 }
@@ -66,8 +78,13 @@ export async function reunirNoLote(c: Candidato, comAvulsos = true, tarifa?: Tar
     if (r.error) return r.error.message;
     loteId = r.data.id;
   }
-  const ins = await supabase.from('lotes_recebimento_itens').insert(itens.map(l => ({ lote_id: loteId, beneficiario_id: l.beneficiario_id, nome: l.favorecido, valor: Number(l.valor), lancamento_id: l.id })));
+  const ins = await supabase.from('lotes_recebimento_itens').insert(itens.map(l => ({ lote_id: loteId, beneficiario_id: l.beneficiario_id, nome: l.favorecido, valor: Number(l.valor), desconto: Number(l.desconto || 0), lancamento_id: l.id })));
   if (ins.error) return ins.error.message;
+  // descontos lançados avulsos passam a fazer parte do lançamento único de descontos do lote
+  for (const l of itens) if (l.desconto_lanc_id) {
+    await supabase.from('lancamentos').update({ desconto_lanc_id: null }).eq('id', l.id);
+    await supabase.from('lancamentos').delete().eq('id', l.desconto_lanc_id);
+  }
   if (tarifa && tarifa.unit > 0 && c.chave.natureza === 'entrada') {
     const { data: lt } = await supabase.from('lotes_recebimento').select('lanc_tarifa_id').eq('id', loteId).single();
     if (!(lt as { lanc_tarifa_id: number | null } | null)?.lanc_tarifa_id) {
@@ -79,7 +96,7 @@ export async function reunirNoLote(c: Candidato, comAvulsos = true, tarifa?: Tar
       } catch (e) { return (e as Error).message; }
     }
   }
-  await recalcularLote(loteId!);
+  try { await recalcularLote(loteId!); } catch (e) { return (e as Error).message; }
   return null;
 }
 

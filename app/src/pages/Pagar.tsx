@@ -10,6 +10,7 @@ import { Cabecalho } from '../components/Layout';
 import { formatarDocumento } from '../lib/documento';
 import { usePersistente } from '../lib/rascunho';
 import { registrarPagamento } from '../lib/titulos';
+import { sincronizarDesconto } from '../lib/descontos';
 import { pendenciasDeLote, temOQueReunir, type Candidato } from '../lib/lotes';
 import ConfirmarLotes from '../components/ConfirmarLotes';
 import { ModalLancarContas } from '../components/LancarContas';
@@ -26,7 +27,7 @@ export default function Pagar() {
   const hoje = hojeISO();
   const [lista, setLista] = useState<Lancamento[]>([]);
   const [f, setF] = useState({ per: 'mes', conta: '', grupo: '', status: '' });
-  const [baixa, setBaixa] = usePersistente<{ l: Lancamento; data: string; conta: string; valor: string; juros: string } | null>('pagar:baixa', null);
+  const [baixa, setBaixa] = usePersistente<{ l: Lancamento; data: string; conta: string; valor: string; juros: string; desconto?: string } | null>('pagar:baixa', null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
   const [lotesDia, setLotesDia] = useState<Candidato[] | null>(null);
@@ -67,17 +68,24 @@ export default function Pagar() {
 
   async function confirmar(e: React.FormEvent) {
     e.preventDefault(); if (!baixa) return; setErro('');
-    const { l } = baixa, valor = Number(baixa.valor), juros = Number(baixa.juros || 0);
+    const { l } = baixa, valor = Number(baixa.valor), juros = Number(baixa.juros || 0), desconto = l.fatura_id ? 0 : Number(baixa.desconto || 0);
     if (!baixa.conta) { setErro('Informe a conta do pagamento.'); return; }
+    if (desconto < 0) { setErro('O desconto não pode ser negativo.'); return; }
+    if (desconto > 0 && Math.abs(valor + desconto - Number(l.valor)) >= 0.005) { setErro(`Com desconto, a conta é quitada: valor pago + desconto deve somar ${brl(l.valor)}.`); return; }
     if (valor <= 0 || valor > Number(l.valor) + 0.004) { setErro('O valor pago deve ser maior que zero e até ' + brl(l.valor) + '.'); return; }
     const conta_id = Number(baixa.conta);
     const parcial = valor < Number(l.valor) - 0.004;
     let idPago: number | null = null;
     if (!l.fatura_id) {
       // conta única: pagamento parcial fica no histórico e o saldo continua em aberto
-      const r = await registrarPagamento(l, valor, baixa.data, conta_id);
+      const r = await registrarPagamento(l, Math.round((valor + desconto) * 100) / 100, baixa.data, conta_id);
       if (r.erro) { setErro(r.erro); return; }
       if (r.id) idPago = r.id;
+      if (desconto > 0 && r.id) {
+        const { data: pago } = await supabase.from('lancamentos').select('*').eq('id', r.id).single();
+        const ed = pago ? await sincronizarDesconto(pago as Lancamento, desconto) : 'conta não encontrada';
+        if (ed) { setErro('Baixa registrada, mas o desconto não foi lançado: ' + ed); setVersao(v => v + 1); return; }
+      }
     } else if (l.fatura_id) {
       const { data: g } = await supabase.from('grupos').select('id').eq('nome', 'Pagamento de fatura').single();
       const r = await supabase.from('lancamentos').insert({ tipo: 'saida', conta_id, vencimento: l.vencimento, data_pagamento: baixa.data, grupo_id: g!.id, favorecido: l.favorecido, referencia: l.referencia, valor, status: 'pago', fatura_id: l.fatura_id });
@@ -159,7 +167,8 @@ export default function Pagar() {
               <label>Conta<select required value={baixa.conta} onChange={e => setBaixa({ ...baixa, conta: e.target.value })}><option value="" disabled>Selecione</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
               <label>Valor pago (R$)<CampoValor min="0.01" required value={baixa.valor} onChange={e => setBaixa({ ...baixa, valor: e.target.value })} /></label>
               <label>Juros / multa (R$)<CampoValor min="0" value={baixa.juros} onChange={e => setBaixa({ ...baixa, juros: e.target.value })} /></label>
-              <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Valor menor que o total registra pagamento parcial; a diferença continua em aberto. Multa e juros entram como lançamento separado em Despesas financeiras · Multa/juros por atraso.</p>
+              {!baixa.l.fatura_id && <label>Desconto obtido (R$)<CampoValor min="0" value={baixa.desconto || ''} onChange={e => { const d = Number(e.target.value || 0); setBaixa({ ...baixa, desconto: e.target.value, valor: d > 0 ? String(Math.round((Number(baixa.l.valor) - d) * 100) / 100) : String(baixa.l.valor) }); }} /></label>}
+              <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Valor menor que o total registra pagamento parcial; a diferença continua em aberto. Multa e juros entram como lançamento separado em Despesas financeiras · Multa/juros por atraso.{!baixa.l.fatura_id && ' Com desconto, a conta é quitada e o desconto entra em Receitas financeiras · Descontos obtidos.'}</p>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full"><button type="button" className="btn ghost" onClick={() => setBaixa(null)}>Cancelar</button><button className="btn">Confirmar baixa</button></div>
             </form>

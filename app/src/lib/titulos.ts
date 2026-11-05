@@ -45,7 +45,7 @@ export async function registrarPagamento(l: Lancamento, valor: number, data: str
   }
   const { id: _id, criado_em: _c, criado_por: _p, juros_lanc_id: _j, ofx_fitid: _o, ...resto } = l as Lancamento & { criado_em?: string; criado_por?: string };
   const ins = await supabase.from('lancamentos').insert({
-    ...resto, valor: r2(valor), status: 'pago', conta_id: contaId, data_pagamento: data, titulo_id: l.id, valor_original: null, juros_multa: 0,
+    ...resto, valor: r2(valor), status: 'pago', conta_id: contaId, data_pagamento: data, titulo_id: l.id, valor_original: null, juros_multa: 0, desconto: 0, desconto_lanc_id: null,
     observacao: [obs, 'pagamento parcial'].filter(Boolean).join('; '), atualizado_em: agora(),
   }).select('id').single();
   if (ins.error) return { erro: ins.error.message, id: null };
@@ -75,23 +75,20 @@ export async function estornarPagamento(titulo: Lancamento, pagamento: Lancament
 
 export const totalTitulo = (l: Lancamento) => Number(l.valor_original ?? l.valor);
 
-/** Tira um lançamento do lote de recebimento e recalcula o total e a tarifa do lote */
+/** Tira um lançamento do lote e recalcula total, tarifa e desconto do lote */
 async function removerDoLote(lancamentoId: number) {
+  const { recalcularLote } = await import('./lotes');
   const { data: it } = await supabase.from('lotes_recebimento_itens').select('id,lote_id').eq('lancamento_id', lancamentoId);
   for (const x of (it as { id: number; lote_id: number }[]) || []) {
     await supabase.from('lotes_recebimento_itens').delete().eq('id', x.id);
-    const { data: lote } = await supabase.from('lotes_recebimento').select('*').eq('id', x.lote_id).single();
-    const { data: resto } = await supabase.from('lotes_recebimento_itens').select('valor').eq('lote_id', x.lote_id);
-    const n = (resto || []).length, total = r2(((resto as { valor: number }[]) || []).reduce((a, y) => a + Number(y.valor), 0));
-    const lt = lote as { lanc_tarifa_id: number | null; tarifa_unitaria: number } | null;
+    const { data: lote } = await supabase.from('lotes_recebimento').select('lanc_tarifa_id,lanc_desconto_id').eq('id', x.lote_id).single();
+    const { count } = await supabase.from('lotes_recebimento_itens').select('id', { count: 'exact', head: true }).eq('lote_id', x.lote_id);
+    const lt = lote as { lanc_tarifa_id: number | null; lanc_desconto_id: number | null } | null;
     if (!lt) continue;
-    if (!n) {
-      if (lt.lanc_tarifa_id) await supabase.from('lancamentos').delete().eq('id', lt.lanc_tarifa_id);
+    if (!count) {
+      for (const id of [lt.lanc_tarifa_id, lt.lanc_desconto_id]) if (id) await supabase.from('lancamentos').delete().eq('id', id);
       await supabase.from('lotes_recebimento').delete().eq('id', x.lote_id);
-    } else {
-      await supabase.from('lotes_recebimento').update({ quantidade: n, total }).eq('id', x.lote_id);
-      if (lt.lanc_tarifa_id) await supabase.from('lancamentos').update({ valor: r2(n * Number(lt.tarifa_unitaria)), referencia: `Tarifa de ${n} boleto(s)`, observacao: `tarifa de ${n} boleto(s) × ${Number(lt.tarifa_unitaria).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, atualizado_em: agora() }).eq('id', lt.lanc_tarifa_id);
-    }
+    } else await recalcularLote(x.lote_id);
   }
 }
 
@@ -105,6 +102,7 @@ export async function desfazerBaixa(l: Lancamento): Promise<string | null> {
   if (l.titulo_id) {
     const { data: t } = await supabase.from('lancamentos').select('*').eq('id', l.titulo_id).single();
     if (!t) return 'Conta original não encontrada.';
+    if (l.desconto_lanc_id) await supabase.from('lancamentos').delete().eq('id', l.desconto_lanc_id);
     const e = await estornarPagamento(t as Lancamento, l);
     if (!e) await removerDoLote(l.id);
     return e;
@@ -120,6 +118,10 @@ export async function desfazerBaixa(l: Lancamento): Promise<string | null> {
   if (l.juros_lanc_id) {
     await supabase.from('lancamentos').update({ juros_lanc_id: null }).eq('id', l.id);
     await supabase.from('lancamentos').delete().eq('id', l.juros_lanc_id);
+  }
+  if (l.desconto_lanc_id || Number(l.desconto || 0)) {
+    await supabase.from('lancamentos').update({ desconto_lanc_id: null, desconto: 0 }).eq('id', l.id);
+    if (l.desconto_lanc_id) await supabase.from('lancamentos').delete().eq('id', l.desconto_lanc_id);
   }
   if (l.fatura_id) { const { sincronizarFatura } = await import('./faturas'); await sincronizarFatura(l.fatura_id); }
   return null;

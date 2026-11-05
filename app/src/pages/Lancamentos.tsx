@@ -12,7 +12,8 @@ import { EditorRateio, HistoricoPagamentos, linhaVazia, somaRateio } from '../co
 import { DetalheLote } from '../components/Recebimentos';
 import { ModalEditarLote } from '../components/EditarLote';
 import ConfirmarLotes from '../components/ConfirmarLotes';
-import { pendenciasDeLote, temOQueReunir, type Candidato } from '../lib/lotes';
+import { pendenciasDeLote, recalcularLote, temOQueReunir, type Candidato } from '../lib/lotes';
+import { sincronizarDesconto } from '../lib/descontos';
 import { anterior, carregarRateio, desfazerBaixa, gravarRateio, type LinhaRateio } from '../lib/titulos';
 import { Cabecalho } from '../components/Layout';
 import { FormBeneficiario } from '../components/Beneficiarios';
@@ -127,7 +128,7 @@ export default function Lancamentos() {
     if (!form) return;
     const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null, centro_custo_id: form.centro_custo_id ? Number(form.centro_custo_id) : null,
       data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null,
-      ...(form.status === 'pago' && form.id && lista.find(x => x.id === form.id)?.status !== 'pago' ? { baixa_anterior: anterior(lista.find(x => x.id === form.id)!) } : {}), juros_multa: Number(form.juros_multa || 0), atualizado_em: new Date().toISOString() };
+      ...(form.status === 'pago' && form.id && lista.find(x => x.id === form.id)?.status !== 'pago' ? { baixa_anterior: anterior(lista.find(x => x.id === form.id)!) } : {}), juros_multa: Number(form.juros_multa || 0), desconto: Number(form.desconto || 0), atualizado_em: new Date().toISOString() };
     if (form.status === 'pago' && !dados.conta_id) { setErro('Para marcar como Pago, informe a conta.'); return; }
     if (rateio) {
       const validas = rateio.filter(l => l.grupo_id && Number(l.valor) > 0);
@@ -152,6 +153,16 @@ export default function Lancamentos() {
     }
     const erroJuros = await sincronizarJuros(res.data as Lancamento);
     if (erroJuros) { setErro('Lançamento salvo, mas a multa/juros não foi lançada: ' + erroJuros); setVersao(v => v + 1); return; }
+    if (!form.transferencia_id && !form.fatura_id) {
+      const salvo = res.data as Lancamento, d = Number(form.desconto || 0), loteId = lotes.get(salvo.id);
+      let ed: string | null = null;
+      if (loteId != null) {
+        // item de lote: o desconto entra no lançamento único de descontos do lote
+        await supabase.from('lotes_recebimento_itens').update({ desconto: salvo.status === 'pago' ? d : 0 }).eq('lancamento_id', salvo.id);
+        try { await recalcularLote(loteId); } catch (e) { ed = (e as Error).message; }
+      } else ed = await sincronizarDesconto(salvo, d);
+      if (ed) { setErro('Lançamento salvo, mas o desconto não foi lançado: ' + ed); setVersao(v => v + 1); return; }
+    }
     invalidarDicionario();
     const antes = form.id ? lista.find(x => x.id === form.id)?.status : null;
     if (dados.status === 'pago' && antes !== 'pago' && !form.fatura_id) await perguntarLotes([(res.data as Lancamento).id]);
@@ -207,6 +218,7 @@ export default function Lancamentos() {
       ? await supabase.from('lancamentos').delete().eq('transferencia_id', form.transferencia_id)
       : await supabase.from('lancamentos').delete().eq('id', form.id);
     if (!error && form.juros_lanc_id) await supabase.from('lancamentos').delete().eq('id', form.juros_lanc_id);
+    if (!error && form.desconto_lanc_id) await supabase.from('lancamentos').delete().eq('id', form.desconto_lanc_id);
     if (error) { setErro(error.message); return; }
     fechar(); setVersao(v => v + 1);
   }
@@ -362,6 +374,10 @@ export default function Lancamentos() {
                 onChange={e => setForm({ ...form, data_pagamento: e.target.value || null, status: e.target.value ? 'pago' : form.status === 'pago' ? 'confirmado' : form.status })} /></label>
               <label>Multa / juros por atraso (R$)<CampoValor min="0" disabled={!!form.transferencia_id || !!form.fatura_id} value={form.juros_multa || ''} placeholder="0,00"
                 onChange={e => setForm({ ...form, juros_multa: e.target.value as unknown as number })} /></label>
+              <label>Desconto {form.tipo === 'entrada' ? 'concedido' : 'obtido'} (R$)<CampoValor min="0" disabled={!!form.transferencia_id || !!form.fatura_id} value={form.desconto || ''} placeholder="0,00"
+                onChange={e => setForm({ ...form, desconto: e.target.value as unknown as number })} /></label>
+              {Number(form.desconto || 0) > 0 && <p className="full" style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
+                {brl(Number(form.desconto))} serão lançados em <b>{form.tipo === 'entrada' ? 'Despesas financeiras · Descontos concedidos' : 'Receitas financeiras · Descontos obtidos'}</b>{form.status !== 'pago' ? ', quando o status for Pago' : ''}. Valor efetivamente {form.tipo === 'entrada' ? 'recebido' : 'pago'}: {brl(Number(form.valor || 0) - Number(form.desconto) + Number(form.juros_multa || 0))}.</p>}
               {Number(form.juros_multa || 0) > 0 && <p className="full" style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
                 {brl(Number(form.juros_multa))} serão lançados em <b>{form.tipo === 'saida' ? 'Despesas financeiras' : 'Receitas financeiras'} · Multa/juros por atraso</b>, na data do {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'}{form.status !== 'pago' ? ', quando o status for Pago' : ''}. Total {form.tipo === 'entrada' ? 'recebido' : 'pago'}: {brl(Number(form.valor || 0) + Number(form.juros_multa))}.</p>}
               {form.id && !form.transferencia_id && !form.fatura_id && !form.titulo_id && (form.valor_original != null || form.status !== 'pago') &&
