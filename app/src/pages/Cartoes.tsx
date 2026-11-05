@@ -12,12 +12,13 @@ import { anterior, desfazerBaixa } from '../lib/titulos';
 import { BarraSelecao } from '../components/AcoesSelecao';
 
 interface Fatura { id: number; cartao_id: number; cartao: string; competencia: string; data_fechamento: string; data_vencimento: string; total: number; pago: number }
-interface Compra { id: number; fatura_id: number; data_compra: string; descricao: string; grupo_id: number; centro_custo_id: number | null; parcela: string | null; valor: number }
+interface Compra { id: number; fatura_id: number; data_compra: string; descricao: string; grupo_id: number; subgrupo_id: number | null; centro_custo_id: number | null; beneficiario_id?: number | null; observacao?: string | null; parcela: string | null; valor: number }
+interface Estab { descricao: string; grupo_id: number; subgrupo_id: number | null; beneficiario_id: number | null }
 const MES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const comp = (c: string) => MES[Number(c.slice(5, 7)) - 1] + '/' + c.slice(0, 4);
 
 export default function Cartoes() {
-  const { centros, contas, grupos, cartoes } = useCadastros();
+  const { centros, contas, grupos, subgrupos, todosSub, cartoes, beneficiarios } = useCadastros();
   const hoje = hojeISO();
   const [params, setParams] = useSearchParams();
   const [faturas, setFaturas] = useState<Fatura[]>([]);
@@ -26,13 +27,14 @@ export default function Cartoes() {
   const [compras, setCompras] = useState<Compra[]>([]);
   const [pags, setPags] = useState<Lancamento[]>([]);
   const [aba, setAba] = useState<'compras' | 'pag'>('compras');
-  const [novaCompra, setNovaCompra] = usePersistente<{ data: string; descricao: string; grupo: string; valor: string; parcelas: string; centro?: string } | null>('cart:compra', null);
+  const [novaCompra, setNovaCompra] = usePersistente<{ data: string; descricao: string; grupo: string; sub?: string; valor: string; parcelas: string; centro?: string; obs?: string; benef?: string } | null>('cart:compra', null);
   const [pagto, setPagto] = usePersistente<{ conta: string; data: string; valor: string; status: Status } | null>('cart:pagto', null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
   const recarregar = () => setVersao(v => v + 1);
   const [selC, setSelC] = useState<Set<number>>(new Set());
-  const [editC, setEditC] = useState<{ ids: number[]; data: string; descricao: string; grupo: string; centro: string; valor: string } | null>(null);
+  const [editC, setEditC] = useState<{ ids: number[]; data: string; descricao: string; grupo: string; sub: string; centro: string; valor: string; obs: string; benef: string } | null>(null);
+  const [historico, setHistorico] = useState<Estab[]>([]);
   const [confExcluir, setConfExcluir] = useState(false);
 
   useEffect(() => {
@@ -61,6 +63,32 @@ export default function Cartoes() {
     supabase.from('lancamentos').select('*').eq('fatura_id', faturaId).order('vencimento').then(({ data }) => setPags((data as Lancamento[]) || []));
   }, [faturaId, versao]);
 
+  // Estabelecimentos já usados (sugestão de classificação) e cadastros de fornecedores
+  useEffect(() => {
+    supabase.from('compras_cartao').select('descricao,grupo_id,subgrupo_id,beneficiario_id').order('id', { ascending: false }).range(0, 2999).then(({ data }) => {
+      const vistos = new Set<string>(), out: Estab[] = [];
+      for (const c of (data as Estab[]) || []) { const k = c.descricao.trim().toLowerCase(); if (!vistos.has(k)) { vistos.add(k); out.push(c); } }
+      setHistorico(out);
+    });
+  }, [versao]);
+  /** Ao escolher o estabelecimento: liga ao cadastro (se houver) e sugere grupo e subgrupo, sem sobrescrever o que já foi escolhido */
+  function escolherEstab<T extends { descricao: string; grupo: string; sub?: string; benef?: string }>(f: T, texto: string): T {
+    const q = texto.trim().toLowerCase();
+    const b = beneficiarios.find(x => x.nome.toLowerCase() === q || (x.nome_fantasia || '').toLowerCase() === q);
+    const h = historico.find(x => x.descricao.trim().toLowerCase() === q);
+    const g = f.grupo || String(h?.grupo_id || b?.grupo_id || '');
+    const sub = f.grupo ? f.sub : String((h ? h.subgrupo_id : b?.subgrupo_id) || '');
+    return { ...f, descricao: texto, benef: b ? String(b.id) : h?.beneficiario_id ? String(h.beneficiario_id) : '', grupo: g, sub: sub || '' };
+  }
+  const opcoesEstab = useMemo(() => {
+    const nomes = new Map<string, string>();
+    beneficiarios.filter(b => b.ativo).forEach(b => nomes.set(b.nome.toLowerCase(), b.nome));
+    historico.forEach(h => { if (!nomes.has(h.descricao.trim().toLowerCase())) nomes.set(h.descricao.trim().toLowerCase(), h.descricao.trim()); });
+    return [...nomes.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [beneficiarios, historico]);
+  const nomeSub = (id: number | null) => todosSub.find(x => x.id === id)?.nome || '';
+  const despesas = grupos.filter(g => g.natureza !== 'receita' && g.nome !== 'Pagamento de fatura');
+
   const fat = faturas.find(f => f.id === faturaId);
   const cartao = cartoes.find(c => c.id === cartaoId);
   const agendado = pags.filter(p => p.status === 'agendado').reduce((a, p) => a + Number(p.valor), 0);
@@ -82,8 +110,8 @@ export default function Cartoes() {
       const tocadas = new Set<number>();
       for (let i = 0; i < n; i++) {
         const fid = await obterFatura(cartao, datasFatura(cartao, novaCompra.data, i));
-        const { error } = await supabase.from('compras_cartao').insert({ cartao_id: cartao.id, fatura_id: fid, data_compra: novaCompra.data, descricao: novaCompra.descricao,
-          grupo_id: Number(novaCompra.grupo), centro_custo_id: novaCompra.centro ? Number(novaCompra.centro) : null, parcela: n > 1 ? `${String(i + 1).padStart(2, '0')} de ${String(n).padStart(2, '0')}` : null, valor: i === n - 1 ? ultima : base });
+        const { error } = await supabase.from('compras_cartao').insert({ cartao_id: cartao.id, fatura_id: fid, data_compra: novaCompra.data, descricao: novaCompra.descricao.trim(),
+          grupo_id: Number(novaCompra.grupo), subgrupo_id: novaCompra.sub ? Number(novaCompra.sub) : null, beneficiario_id: novaCompra.benef ? Number(novaCompra.benef) : null, observacao: novaCompra.obs?.trim() || null, centro_custo_id: novaCompra.centro ? Number(novaCompra.centro) : null, parcela: n > 1 ? `${String(i + 1).padStart(2, '0')} de ${String(n).padStart(2, '0')}` : null, valor: i === n - 1 ? ultima : base });
         if (error) throw error;
         tocadas.add(fid);
       }
@@ -103,15 +131,16 @@ export default function Cartoes() {
     setErro('');
     const um = cs.length === 1 ? cs[0] : null;
     setEditC({ ids: cs.map(c => c.id), data: um?.data_compra || '', descricao: um?.descricao || '', grupo: um || cs.every(c => c.grupo_id === cs[0].grupo_id) ? String(cs[0].grupo_id) : '',
-      centro: um?.centro_custo_id ? String(um.centro_custo_id) : '', valor: um ? String(um.valor) : '' });
+      sub: um?.subgrupo_id ? String(um.subgrupo_id) : '', centro: um?.centro_custo_id ? String(um.centro_custo_id) : '', valor: um ? String(um.valor) : '',
+      obs: um?.observacao || '', benef: um?.beneficiario_id ? String(um.beneficiario_id) : '' });
   };
   async function salvarEdicao(e: React.FormEvent) {
     e.preventDefault(); if (!editC) return; setErro('');
     const um = editC.ids.length === 1;
     const d: Record<string, unknown> = {};
-    if (editC.grupo) d.grupo_id = Number(editC.grupo);
+    if (editC.grupo) { d.grupo_id = Number(editC.grupo); d.subgrupo_id = editC.sub ? Number(editC.sub) : null; }
     if (um || editC.centro) d.centro_custo_id = editC.centro ? Number(editC.centro) : null;
-    if (um) { d.data_compra = editC.data; d.descricao = editC.descricao; d.valor = Number(editC.valor); }
+    if (um) { d.data_compra = editC.data; d.descricao = editC.descricao.trim(); d.valor = Number(editC.valor); d.observacao = editC.obs.trim() || null; d.beneficiario_id = editC.benef ? Number(editC.benef) : null; }
     if (!Object.keys(d).length) { setErro('Escolha o grupo ou o centro de custo a aplicar.'); return; }
     const { error } = await supabase.from('compras_cartao').update(d).in('id', editC.ids);
     if (error) { setErro(error.message); return; }
@@ -190,9 +219,9 @@ export default function Cartoes() {
                   <button className="btn mini" style={{ background: 'var(--neg)', borderColor: 'var(--neg)' }} onClick={() => excluirCompras(marcadas.map(c => c.id))}>Sim, excluir</button>
                   <button className="btn ghost mini" onClick={() => setConfExcluir(false)}>Não</button></span>}
               </BarraSelecao>
-              <table><thead><tr><th className="c"><input type="checkbox" checked={compras.length > 0 && compras.every(c => selC.has(c.id))} onChange={e => setSelC(e.target.checked ? new Set(compras.map(c => c.id)) : new Set())} /></th><th>Data</th><th>Estabelecimento</th><th>Grupo</th><th>Parcela</th><th className="r">Valor</th></tr></thead>
+              <table><thead><tr><th className="c"><input type="checkbox" checked={compras.length > 0 && compras.every(c => selC.has(c.id))} onChange={e => setSelC(e.target.checked ? new Set(compras.map(c => c.id)) : new Set())} /></th><th>Data</th><th>Estabelecimento</th><th>Grupo</th><th>Subgrupo</th><th>Parcela</th><th className="r">Valor</th></tr></thead>
                 <tbody>{compras.map(c => <tr key={c.id} className="clicavel" title="Alterar a compra" onClick={() => abrirEdicao([c])} style={selC.has(c.id) ? { background: 'var(--gold-soft)' } : undefined}>
-                  <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={selC.has(c.id)} onChange={e => { const n = new Set(selC); e.target.checked ? n.add(c.id) : n.delete(c.id); setSelC(n); }} /></td><td>{dataBR(c.data_compra)}</td><td>{c.descricao}</td><td>{nomeG(c.grupo_id)}</td><td style={{ whiteSpace: 'nowrap' }}>{c.parcela || '·'}</td>
+                  <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={selC.has(c.id)} onChange={e => { const n = new Set(selC); e.target.checked ? n.add(c.id) : n.delete(c.id); setSelC(n); }} /></td><td>{dataBR(c.data_compra)}</td><td>{c.descricao}{c.observacao && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{c.observacao}</div>}</td><td>{nomeG(c.grupo_id)}</td><td>{nomeSub(c.subgrupo_id) || '·'}</td><td style={{ whiteSpace: 'nowrap' }}>{c.parcela || '·'}</td>
                   <td className={'r ' + (Number(c.valor) < 0 ? 'pos' : '')}>{brl(c.valor)}</td></tr>)}</tbody></table>
               </>
             ) : (
@@ -225,18 +254,24 @@ export default function Cartoes() {
         </div>
       )}
 
+      <datalist id="estabelecimentos">{opcoesEstab.map(n => <option key={n} value={n} />)}</datalist>
       {novaCompra && cartao && (
         <div className="modal-bg open">
           <div className="modal"><h2>Nova compra · {cartao.nome}</h2>
             <form className="form" onSubmit={salvarCompra}>
               <label>Data da compra<DataBR required value={novaCompra.data} onChange={e => setNovaCompra({ ...novaCompra, data: e.target.value })} /></label>
               <label>Valor total (R$)<CampoValor required value={novaCompra.valor} onChange={e => setNovaCompra({ ...novaCompra, valor: e.target.value })} /></label>
-              <label className="full">Estabelecimento<input required value={novaCompra.descricao} onChange={e => setNovaCompra({ ...novaCompra, descricao: e.target.value })} /></label>
-              <label>Grupo<select required value={novaCompra.grupo} onChange={e => setNovaCompra({ ...novaCompra, grupo: e.target.value })}><option value="" disabled>Selecione</option>
-                {grupos.filter(g => g.natureza !== 'receita' && g.nome !== 'Pagamento de fatura').map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
+              <label className="full">Estabelecimento<input required list="estabelecimentos" value={novaCompra.descricao} placeholder="Digite para buscar nos cadastrados ou informe um novo"
+                onChange={e => setNovaCompra(escolherEstab(novaCompra, e.target.value))} />
+                {novaCompra.benef && <span style={{ color: 'var(--pos)' }}>Ligado ao cadastro de fornecedores</span>}</label>
+              <label>Grupo<select required value={novaCompra.grupo} onChange={e => setNovaCompra({ ...novaCompra, grupo: e.target.value, sub: '' })}><option value="" disabled>Selecione</option>
+                {despesas.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
+              <label>Subgrupo<select value={novaCompra.sub || ''} onChange={e => setNovaCompra({ ...novaCompra, sub: e.target.value })}><option value="">·</option>
+                {subgrupos.filter(x => x.grupo_id === Number(novaCompra.grupo)).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
               <label>Centro de custo<select value={novaCompra.centro || ''} onChange={e => setNovaCompra({ ...novaCompra, centro: e.target.value })}>
                 <option value="">{'Padrão do plano: ' + (nomeCentro(centros, grupos.find(g => g.id === Number(novaCompra.grupo))?.centro_custo_id) || 'Geral')}</option><OpcoesCentro centros={centros} /></select></label>
               <label>Parcelas<input type="number" min={1} max={24} value={novaCompra.parcelas} onChange={e => setNovaCompra({ ...novaCompra, parcelas: e.target.value })} /></label>
+              <label className="full">Observações / detalhes<input value={novaCompra.obs || ''} onChange={e => setNovaCompra({ ...novaCompra, obs: e.target.value })} placeholder="Ex.: material de escritório para o setor fiscal" /></label>
               <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>
                 {novaCompra.data && `Entra na fatura com vencimento em ${dataBR(datasFatura(cartao, novaCompra.data).data_vencimento)}`}
                 {Number(novaCompra.parcelas) > 1 && `, em ${novaCompra.parcelas} parcelas mensais`}. Valor negativo registra estorno.</p>
@@ -254,12 +289,16 @@ export default function Cartoes() {
               {editC.ids.length === 1 && <>
                 <label>Data da compra<DataBR required value={editC.data} onChange={e => setEditC({ ...editC, data: e.target.value })} /></label>
                 <label>Valor (R$)<CampoValor required value={editC.valor} onChange={e => setEditC({ ...editC, valor: e.target.value })} /></label>
-                <label className="full">Estabelecimento<input required value={editC.descricao} onChange={e => setEditC({ ...editC, descricao: e.target.value })} /></label>
+                <label className="full">Estabelecimento<input required list="estabelecimentos" value={editC.descricao} onChange={e => setEditC(escolherEstab(editC, e.target.value))} />
+                  {editC.benef && <span style={{ color: 'var(--pos)' }}>Ligado ao cadastro de fornecedores</span>}</label>
               </>}
-              <label>Grupo<select required={editC.ids.length === 1} value={editC.grupo} onChange={e => setEditC({ ...editC, grupo: e.target.value })}><option value="">{editC.ids.length === 1 ? 'Selecione' : 'Manter o de cada compra'}</option>
-                {grupos.filter(g => g.natureza !== 'receita' && g.nome !== 'Pagamento de fatura').map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
-              <label>Centro de custo<select value={editC.centro} onChange={e => setEditC({ ...editC, centro: e.target.value })}>
+              <label>Grupo<select required={editC.ids.length === 1} value={editC.grupo} onChange={e => setEditC({ ...editC, grupo: e.target.value, sub: '' })}><option value="">{editC.ids.length === 1 ? 'Selecione' : 'Manter o de cada compra'}</option>
+                {despesas.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
+              <label>Subgrupo<select value={editC.sub} disabled={!editC.grupo} onChange={e => setEditC({ ...editC, sub: e.target.value })}><option value="">·</option>
+                {subgrupos.filter(x => x.grupo_id === Number(editC.grupo) || String(x.id) === editC.sub).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
+              <label className="full">Centro de custo<select value={editC.centro} onChange={e => setEditC({ ...editC, centro: e.target.value })}>
                 <option value="">{editC.ids.length === 1 ? 'Padrão do plano: ' + (nomeCentro(centros, grupos.find(g => g.id === Number(editC.grupo))?.centro_custo_id) || 'Geral') : 'Manter o de cada compra'}</option><OpcoesCentro centros={centros} /></select></label>
+              {editC.ids.length === 1 && <label className="full">Observações / detalhes<input value={editC.obs} onChange={e => setEditC({ ...editC, obs: e.target.value })} /></label>}
               <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>A compra continua nesta fatura. Para mudar de fatura ou de número de parcelas, exclua e lance novamente.</p>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full"><button type="button" className="btn ghost" onClick={() => setEditC(null)}>Cancelar</button><button className="btn">Salvar</button></div>

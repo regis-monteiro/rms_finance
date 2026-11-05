@@ -52,6 +52,7 @@ Aplicativo de controle financeiro interno da RMS Organização Contábil.
 - Versão 1.4: seleção com barra de ações (alterar, baixar, excluir) em Contas a pagar, Contas a receber e compras do cartão; clique na linha abre a edição. Exclusão bloqueada para contas com pagamento parcial, saldos de fatura e transferências.
 - Versão 1.5: Fornecedores / Clientes com seleção para ativar, inativar e excluir em lote (só exclui cadastros sem lançamentos) e botão Excluir no formulário.
 - Versão 1.6: desconto na baixa. Concedido (a receber) em Despesas financeiras · Descontos concedidos; obtido (a pagar) em Receitas financeiras · Descontos obtidos. Com desconto a conta é quitada; no lote, os descontos viram um lançamento único (script `supabase/019_descontos.sql`).
+- Versão 1.7: compras do cartão com busca de estabelecimentos (cadastro de fornecedores e já usados, sem obrigar cadastro), subgrupo e observações (script `supabase/020_compras_detalhes.sql`).
 - Versão 0.9: associação de várias linhas do extrato a um lançamento do app (e o contrário) na conciliação, com somas iguais; rótulos Fornecedor / Beneficiário nos pagamentos e Cliente / Origem nos recebimentos (script `supabase/012_associacao_conciliacao.sql`).
 
 Configuração: ver `docs/configuracao.md`.
