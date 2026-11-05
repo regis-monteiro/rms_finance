@@ -18,7 +18,7 @@ export interface Lancamento {
   id: number; tipo: 'entrada' | 'saida'; conta_id: number | null; vencimento: string; data_pagamento: string | null;
   grupo_id: number; subgrupo_id: number | null; favorecido: string; referencia: string | null; documento: string | null;
   valor: number; status: Status; forma_pagamento: string | null; fatura_id: number | null; observacao: string | null;
-  beneficiario_id: number | null; transferencia_id?: string | null; juros_multa?: number; juros_lanc_id?: number | null; centro_custo_id?: number | null; ofx_fitid?: string | null; titulo_id?: number | null; valor_original?: number | null; ofx_anterior?: Record<string, unknown> | null; baixa_anterior?: Record<string, unknown> | null; desconto?: number; desconto_lanc_id?: number | null;
+  beneficiario_id: number | null; transferencia_id?: string | null; juros_multa?: number; juros_lanc_id?: number | null; centro_custo_id?: number | null; ofx_fitid?: string | null; titulo_id?: number | null; valor_original?: number | null; ofx_anterior?: Record<string, unknown> | null; baixa_anterior?: Record<string, unknown> | null; desconto?: number; desconto_lanc_id?: number | null; cliente_id?: number | null;
 }
 export interface Beneficiario {
   id: number; nome: string; documento: string; nome_fantasia: string | null; email: string | null; telefone: string | null;

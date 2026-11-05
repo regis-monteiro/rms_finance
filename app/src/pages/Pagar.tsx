@@ -140,7 +140,7 @@ export default function Pagar() {
               ...ls.map(l => { const s = statusEfetivo(l.status, l.vencimento); return (
                 <tr key={l.id} className="clicavel" title={l.fatura_id ? 'Abrir a fatura' : 'Alterar a conta'} onClick={() => editar(l)} style={sel.has(l.id) ? { background: 'var(--gold-soft)' } : undefined}>
                   <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => alternar(l.id, e.target.checked)} /></td>
-                  <td>{diaMes(l.vencimento)}</td><td>{l.favorecido}{l.observacao && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{l.observacao}</div>}</td>
+                  <td>{diaMes(l.vencimento)}</td><td>{l.favorecido}{l.observacao && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{l.observacao}</div>}{l.cliente_id ? <div><span className="tag">Cliente: {beneficiarios.find(b => b.id === l.cliente_id)?.nome}</span></div> : null}</td>
                   <td>{nome(grupos, l.grupo_id)}</td><td>{nome(subgrupos, l.subgrupo_id) || '·'}</td>
                   <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{l.referencia || '·'}</td>
                   <td className="r">{brl(l.valor)}{l.valor_original != null && <div style={{ fontSize: 11, color: 'var(--muted)' }}>saldo de {brl(l.valor_original)}</div>}</td><td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td>

@@ -21,11 +21,11 @@ function Modal({ titulo, largura = 600, aoFechar, children }: { titulo: string; 
   return <div className="modal-bg open"><div className="modal" style={{ width: `min(${largura}px,100%)` }}><h2>{titulo}</h2>{children}</div></div>;
 }
 
-function CampoBeneficiario({ cad, valor, aoMudar, obrigatorio }: { cad: Cad; valor: number | null; aoMudar: (b: Beneficiario | null) => void; obrigatorio?: boolean }) {
+export function CampoBeneficiario({ cad, valor, aoMudar, obrigatorio, placeholder }: { cad: Pick<Cad, 'beneficiarios'>; valor: number | null; aoMudar: (b: Beneficiario | null) => void; obrigatorio?: boolean; placeholder?: string }) {
   const [txt, setTxt] = useState(rotuloB(cad.beneficiarios.find(b => b.id === valor)));
   return (
     <>
-      <input list="lote-benef" value={txt} required={obrigatorio} placeholder="Nome ou CPF/CNPJ" onChange={e => { setTxt(e.target.value); const b = cad.beneficiarios.find(x => rotuloB(x) === e.target.value); aoMudar(b || null); }} />
+      <input list="lote-benef" value={txt} required={obrigatorio} placeholder={placeholder || 'Nome ou CPF/CNPJ'} style={txt && !cad.beneficiarios.some(x => rotuloB(x) === txt) ? { borderColor: 'var(--neg)' } : undefined} title={txt && !cad.beneficiarios.some(x => rotuloB(x) === txt) ? 'Escolha um cadastro da lista ou apague' : ''} onChange={e => { setTxt(e.target.value); const b = cad.beneficiarios.find(x => rotuloB(x) === e.target.value); aoMudar(b || null); }} />
       <datalist id="lote-benef">{cad.beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotuloB(b)} />)}</datalist>
     </>
   );
@@ -151,8 +151,8 @@ export function ModalCopiar({ itens, cad, aoFechar, aoSalvar }: { itens: Lancame
 
 /* ---------------- Alteração em lote ---------------- */
 export function ModalAlterarLote({ itens, cad, hoje, aoFechar, aoSalvar }: { itens: Lancamento[]; cad: Cad; hoje: string; aoFechar: () => void; aoSalvar: (n: number) => void }) {
-  const [usar, setUsar] = usePersistente('lote:alterar-usar', { status: false, conta: false, venc: false, grupo: false, benef: false, valor: false });
-  const [v, setV] = usePersistente('lote:alterar', { status: 'confirmado' as Status, dataPag: hoje, conta: '', vencModo: 'data', vencData: hoje, vencN: '0', grupo: '', sub: '', benef: null as number | null, valorModo: 'pct', valor: '' });
+  const [usar, setUsar] = usePersistente('lote:alterar-usar', { status: false, conta: false, venc: false, grupo: false, benef: false, cliente: false, valor: false });
+  const [v, setV] = usePersistente('lote:alterar', { status: 'confirmado' as Status, dataPag: hoje, conta: '', vencModo: 'data', vencData: hoje, vencN: '0', grupo: '', sub: '', benef: null as number | null, cliente: null as number | null, valorModo: 'pct', valor: '' });
   const [erro, setErro] = useState('');
   const [processando, setProcessando] = useState(false);
   const especiais = itens.filter(l => l.fatura_id || l.transferencia_id).length;
@@ -171,6 +171,7 @@ export function ModalAlterarLote({ itens, cad, hoje, aoFechar, aoSalvar }: { ite
       if (usar.status) { d.status = v.status; d.data_pagamento = v.status === 'pago' ? v.dataPag : null; }
       if (usar.venc) d.vencimento = v.vencModo === 'data' ? v.vencData : v.vencModo === 'dias' ? somaDiasISO(l.vencimento, Number(v.vencN)) : somaMeses(l.vencimento, Number(v.vencN));
       if (!especial && usar.grupo) { d.grupo_id = Number(v.grupo); d.subgrupo_id = v.sub ? Number(v.sub) : null; }
+      if (!especial && usar.cliente && l.tipo === 'saida') d.cliente_id = v.cliente;
       if (!especial && usar.benef) { d.beneficiario_id = b?.id ?? null; if (b) d.favorecido = b.nome; }
       if (!especial && usar.valor) d.valor = v.valorModo === 'fixo' ? Number(v.valor) : Math.round(Number(l.valor) * (1 + Number(v.valor) / 100) * 100) / 100;
       const { error } = await supabase.from('lancamentos').update(d).eq('id', l.id);
@@ -207,6 +208,10 @@ export function ModalAlterarLote({ itens, cad, hoje, aoFechar, aoSalvar }: { ite
         <div className="full lote">
         {marca('benef', ROTULO_PARTE)}
         {usar.benef && <label className="span2">Fornecedor / cliente cadastrado (também atualiza o nome no lançamento)<CampoBeneficiario cad={cad} valor={v.benef} aoMudar={b => setV(x => ({ ...x, benef: b?.id ?? null }))} /></label>}
+        </div>
+        <div className="full lote">
+        {marca('cliente', 'Cliente relacionado (contas a pagar)')}
+        {usar.cliente && <label className="span2">Cliente para quem a despesa foi feita (em branco remove)<CampoBeneficiario cad={cad} valor={v.cliente} aoMudar={b => setV(x => ({ ...x, cliente: b?.id ?? null }))} /></label>}
         </div>
         <div className="full lote">
         {marca('valor', 'Valor')}

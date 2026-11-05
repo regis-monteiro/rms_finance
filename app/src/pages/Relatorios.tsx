@@ -48,8 +48,19 @@ export default function Relatorios() {
   const contasFiltro = () => (selContas.size ? 'Contas: ' + [...selContas].map(c => (c === 'sem' ? 'A definir' : nome(contas, Number(c)))).join(', ') : 'Todas as contas');
   const passaConta = (l: Lancamento) => !selContas.size || (l.conta_id ? selContas.has(String(l.conta_id)) : selContas.has('sem'));
   const linhaLanc = (l: Lancamento): Linha => ({ venc: l.vencimento, pag: l.data_pagamento, tipo: l.tipo === 'entrada' ? 'Entrada' : 'Saída', conta: nome(contas, l.conta_id) || 'A definir',
-    grupo: nome(grupos, l.grupo_id), sub: nome(subgrupos, l.subgrupo_id), fav: l.favorecido, ref: l.referencia || '', status: STATUS_LABEL[statusEfetivo(l.status, l.vencimento)],
+    grupo: nome(grupos, l.grupo_id), sub: nome(subgrupos, l.subgrupo_id), fav: l.favorecido, cli: nome(beneficiarios, l.cliente_id ?? null), ref: l.referencia || '', status: STATUS_LABEL[statusEfetivo(l.status, l.vencimento)],
     valor: l.tipo === 'saida' ? -Number(l.valor) : Number(l.valor) });
+
+  // Cliente relacionado (despesas feitas para um cliente): filtro e total por cliente
+  const passaCliente = (l: Lancamento) => !opt.cliente || (opt.cliente === 'com' ? l.cliente_id != null : String(l.cliente_id) === opt.cliente);
+  const filtroCliente = () => (opt.cliente === 'com' ? ' · só com cliente relacionado' : opt.cliente ? ' · cliente relacionado: ' + nome(beneficiarios, Number(opt.cliente)) : '');
+  function secaoClientes(ls: Lancamento[]): Relatorio['secoes'] {
+    const m = new Map<string, number>();
+    ls.filter(l => l.cliente_id && l.tipo === 'saida').forEach(l => { const k = nome(beneficiarios, l.cliente_id!); m.set(k, (m.get(k) || 0) + Number(l.valor)); });
+    if (!m.size) return [];
+    return [{ titulo: 'Despesas por cliente relacionado', colunas: [{ titulo: 'Cliente', chave: 'g' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' }],
+      linhas: [...[...m].sort((a, b) => b[1] - a[1]).map(([g, v]) => ({ g, v })), { g: 'Total', v: [...m.values()].reduce((a, v) => a + v, 0), _estilo: 'total' as const }] }];
+  }
 
   async function montar(): Promise<Relatorio> {
     const base = { usuario: usuario?.nome || usuario?.email || '', periodo };
@@ -58,15 +69,16 @@ export default function Relatorios() {
         let q = supabase.from('lancamentos').select('*').eq('tipo', 'saida').neq('status', 'pago').lte('vencimento', ate).order('vencimento').order('id').range(i, f);
         if (!opt.vencidas) q = q.gte('vencimento', de);
         return q;
-      })).filter(passaConta);
+      })).filter(passaConta).filter(passaCliente);
       const vencidas = ls.filter(l => l.vencimento < hoje), soma = (a: Lancamento[]) => a.reduce((s, l) => s + Number(l.valor), 0);
       const porConta = new Map<string, number>(); ls.forEach(l => { const k = nome(contas, l.conta_id) || 'A definir'; porConta.set(k, (porConta.get(k) || 0) + Number(l.valor)); });
       return { ...base, titulo: 'Contas a pagar', arquivo: 'contas_a_pagar', paisagem: true,
-        filtros: contasFiltro() + (opt.vencidas ? ' · inclui vencidas anteriores ao período' : ''),
+        filtros: contasFiltro() + (opt.vencidas ? ' · inclui vencidas anteriores ao período' : '') + filtroCliente(),
         resumo: [{ rotulo: 'Total em aberto', valor: brl(soma(ls)) }, { rotulo: 'Vencidas', valor: brl(soma(vencidas)) }, { rotulo: 'Itens', valor: String(ls.length) }],
         secoes: [
-          { titulo: 'Contas em aberto', colunas: [{ titulo: 'Vencimento', chave: 'venc', tipo: 'data' }, { titulo: 'Fornecedor / Beneficiário', chave: 'fav' }, { titulo: 'Grupo', chave: 'grupo' }, { titulo: 'Subgrupo', chave: 'sub' }, { titulo: 'Conta', chave: 'conta' }, { titulo: 'Ref.', chave: 'ref' }, { titulo: 'Status', chave: 'status' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' }],
+          { titulo: 'Contas em aberto', colunas: [{ titulo: 'Vencimento', chave: 'venc', tipo: 'data' }, { titulo: 'Fornecedor / Beneficiário', chave: 'fav' }, { titulo: 'Grupo', chave: 'grupo' }, { titulo: 'Subgrupo', chave: 'sub' }, { titulo: 'Conta', chave: 'conta' }, { titulo: 'Cliente relacionado', chave: 'cli' }, { titulo: 'Ref.', chave: 'ref' }, { titulo: 'Status', chave: 'status' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' }],
             linhas: [...ls.map(l => ({ ...linhaLanc(l), v: Number(l.valor) })), { venc: '', fav: 'Total', v: soma(ls), _estilo: 'total' as const }] },
+          ...secaoClientes(ls),
           { titulo: 'Total por conta', colunas: [{ titulo: 'Conta', chave: 'c' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' }], linhas: [...[...porConta].map(([c, v]) => ({ c, v })), { c: 'Total', v: soma(ls), _estilo: 'total' as const }] },
         ] };
     }
@@ -77,15 +89,15 @@ export default function Relatorios() {
         if (opt.tipoL) q = q.eq('tipo', opt.tipoL);
         if (opt.statusL === 'pago') q = q.eq('status', 'pago'); else if (opt.statusL === 'aberto') q = q.neq('status', 'pago');
         return q;
-      })).filter(passaConta);
+      })).filter(passaConta).filter(passaCliente);
       const efetiva = (l: Lancamento) => (l.status === 'pago' && l.data_pagamento ? l.data_pagamento : l.vencimento);
       if (opt.base !== 'vencimento') ls.sort((a, b) => efetiva(a).localeCompare(efetiva(b)) || a.id - b.id);
       const ent = ls.filter(l => l.tipo === 'entrada').reduce((a, l) => a + Number(l.valor), 0), sai = ls.filter(l => l.tipo === 'saida').reduce((a, l) => a + Number(l.valor), 0);
       return { ...base, titulo: 'Lançamentos', arquivo: 'lancamentos', paisagem: true,
-        filtros: [contasFiltro(), opt.base === 'pagamento' ? 'por data de pagamento' : opt.base === 'caixa' ? 'por pagamento (pagos) e vencimento (em aberto)' : 'por vencimento', opt.tipoL ? (opt.tipoL === 'entrada' ? 'só entradas' : 'só saídas') : '', opt.statusL === 'pago' ? 'só pagos' : opt.statusL === 'aberto' ? 'só em aberto' : ''].filter(Boolean).join(' · '),
+        filtros: [contasFiltro(), opt.base === 'pagamento' ? 'por data de pagamento' : opt.base === 'caixa' ? 'por pagamento (pagos) e vencimento (em aberto)' : 'por vencimento', opt.tipoL ? (opt.tipoL === 'entrada' ? 'só entradas' : 'só saídas') : '', opt.statusL === 'pago' ? 'só pagos' : opt.statusL === 'aberto' ? 'só em aberto' : ''].filter(Boolean).join(' · ') + filtroCliente(),
         resumo: [{ rotulo: 'Saldo do período', valor: brl(ent - sai) }, { rotulo: 'Entradas', valor: brl(ent) }, { rotulo: 'Saídas', valor: brl(sai) }, { rotulo: 'Lançamentos', valor: ls.length.toLocaleString('pt-BR') }],
-        secoes: [{ colunas: [{ titulo: 'Pagamento', chave: 'pag', tipo: 'data' }, { titulo: 'Vencimento', chave: 'venc', tipo: 'data' }, { titulo: 'Tipo', chave: 'tipo' }, { titulo: 'Conta', chave: 'conta' }, { titulo: 'Grupo', chave: 'grupo' }, { titulo: 'Subgrupo', chave: 'sub' }, { titulo: 'Fornecedor / Cliente', chave: 'fav' }, { titulo: 'Ref.', chave: 'ref' }, { titulo: 'Status', chave: 'status' }, { titulo: 'Valor', chave: 'valor', tipo: 'moeda' }],
-          linhas: [...ls.map(linhaLanc), { fav: 'Entradas', valor: ent, _estilo: 'sub' as const }, { fav: 'Saídas', valor: -sai, _estilo: 'sub' as const }, { fav: 'Saldo do período', valor: ent - sai, _estilo: 'total' as const }] }] };
+        secoes: [{ colunas: [{ titulo: 'Pagamento', chave: 'pag', tipo: 'data' }, { titulo: 'Vencimento', chave: 'venc', tipo: 'data' }, { titulo: 'Tipo', chave: 'tipo' }, { titulo: 'Conta', chave: 'conta' }, { titulo: 'Grupo', chave: 'grupo' }, { titulo: 'Subgrupo', chave: 'sub' }, { titulo: 'Fornecedor / Cliente', chave: 'fav' }, { titulo: 'Cliente relacionado', chave: 'cli' }, { titulo: 'Ref.', chave: 'ref' }, { titulo: 'Status', chave: 'status' }, { titulo: 'Valor', chave: 'valor', tipo: 'moeda' }],
+          linhas: [...ls.map(linhaLanc), { fav: 'Entradas', valor: ent, _estilo: 'sub' as const }, { fav: 'Saídas', valor: -sai, _estilo: 'sub' as const }, { fav: 'Saldo do período', valor: ent - sai, _estilo: 'total' as const }] }, ...secaoClientes(ls)] };
     }
     if (tipo === 'receber') {
       const a0 = Number(de.slice(0, 4)), a1 = Number(ate.slice(0, 4)), m0 = Number(de.slice(5, 7)), m1 = Number(ate.slice(5, 7));
@@ -179,8 +191,8 @@ export default function Relatorios() {
             <label>Período por<select value={opt.base} onChange={e => setOpt({ ...opt, base: e.target.value })}><option value="caixa">Pagamento (pagos) ou vencimento (em aberto)</option><option value="vencimento">Vencimento</option><option value="pagamento">Só data de pagamento</option></select></label>
             <label>Tipo e status<select value={opt.tipoL + '|' + opt.statusL} onChange={e => { const [t, s] = e.target.value.split('|'); setOpt({ ...opt, tipoL: t, statusL: s }); }}>
               <option value="|">Todos</option><option value="entrada|">Só entradas</option><option value="saida|">Só saídas</option><option value="|pago">Só pagos</option><option value="|aberto">Só em aberto</option></select></label></>}
-          {tipo === 'cartoes' && <label className="span2">Cliente relacionado<select value={opt.cliente} onChange={e => setOpt({ ...opt, cliente: e.target.value })}>
-            <option value="">Todas as compras</option><option value="com">Só compras com cliente relacionado</option>{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}</select></label>}
+          {(tipo === 'cartoes' || tipo === 'pagar' || tipo === 'lancamentos') && <label className="span2">Cliente relacionado<select value={opt.cliente} onChange={e => setOpt({ ...opt, cliente: e.target.value })}>
+            <option value="">{tipo === 'cartoes' ? 'Todas as compras' : 'Todos os lançamentos'}</option><option value="com">Só com cliente relacionado</option>{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}</select></label>}
         </div>
         {tipo !== 'cartoes' ? (
           <div style={{ marginTop: 14 }}>

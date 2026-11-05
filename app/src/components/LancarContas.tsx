@@ -9,7 +9,7 @@ import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { carregarDicionario, invalidarDicionario, sugerir } from '../lib/sugestao';
 
 interface Cad { contas: Conta[]; grupos: Grupo[]; subgrupos: Subgrupo[]; centros: CentroCusto[]; beneficiarios: Beneficiario[] }
-interface LinhaC { parte: string; venc: string; valor: string; ref: string; doc: string; grupo: string; sub: string; sugerido?: boolean }
+interface LinhaC { parte: string; venc: string; valor: string; ref: string; doc: string; grupo: string; sub: string; cli?: string; sugerido?: boolean }
 const rotuloB = (b?: Beneficiario) => (b ? `${b.nome} · ${formatarDocumento(b.documento)}` : '');
 const ESPECIAIS = ['Transferências', 'Pagamento de fatura'];
 const nova = (venc: string): LinhaC => ({ parte: '', venc, valor: '', ref: '', doc: '', grupo: '', sub: '' });
@@ -59,10 +59,12 @@ export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar }: { tipo: 'en
       if (!l.parte.trim()) { setErro(`Linha ${i + 1}: informe o ${receber ? 'cliente' : 'fornecedor'}.`); return; }
       if (!l.venc) { setErro(`Linha ${i + 1}: informe o vencimento.`); return; }
       if (!grupo) { setErro(`Linha ${i + 1}: escolha o grupo (na linha ou no padrão do lote).`); return; }
+      const cli = !receber && (l.cli || '').trim() ? benef((l.cli || '').trim()) : null;
+      if (!receber && (l.cli || '').trim() && !cli) { setErro(`Linha ${i + 1}: cliente relacionado não encontrado no cadastro. Escolha da lista ou apague.`); return; }
       if (!receber && l.venc >= '2027-01-01' && !b) { setErro(`Linha ${i + 1}: a partir de 01/01/2027, escolha um fornecedor / beneficiário cadastrado.`); return; }
       regs.push({
         tipo, conta_id: f.conta ? Number(f.conta) : null, vencimento: l.venc, grupo_id: Number(grupo), subgrupo_id: (l.grupo ? l.sub : f.sub) ? Number(l.grupo ? l.sub : f.sub) : null,
-        centro_custo_id: f.centro && !l.grupo ? Number(f.centro) : null, beneficiario_id: b?.id ?? null, favorecido: b?.nome || l.parte.trim(),
+        centro_custo_id: f.centro && !l.grupo ? Number(f.centro) : null, beneficiario_id: b?.id ?? null, favorecido: b?.nome || l.parte.trim(), ...(receber ? {} : { cliente_id: cli?.id ?? null }),
         referencia: l.ref.trim() || null, documento: l.doc.trim() || null, valor: Math.round(Number(l.valor) * 100) / 100, status: f.status, forma_pagamento: f.forma, observacao: 'lançado em lote',
       });
     }
@@ -90,7 +92,7 @@ export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar }: { tipo: 'en
         <datalist id="lote-partes">{cad.beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotuloB(b)} />)}</datalist>
         <div style={{ maxHeight: '48vh', overflow: 'auto' }}>
           <table className="compacta lote-contas">
-            <thead><tr><th style={{ width: 26 }}>#</th><th>{rotuloParte(tipo)}</th><th>Vencimento</th><th className="r">Valor (R$)</th><th>Referência</th><th>Documento</th><th>Grupo (se diferente do padrão)</th><th>Subgrupo</th><th /></tr></thead>
+            <thead><tr><th style={{ width: 26 }}>#</th><th>{rotuloParte(tipo)}</th><th>Vencimento</th><th className="r">Valor (R$)</th><th>Referência</th><th>Documento</th><th>Grupo (se diferente do padrão)</th><th>Subgrupo</th>{!receber && <th>Cliente relacionado</th>}<th /></tr></thead>
             <tbody>{f.linhas.map((l, i) => (
               <tr key={i}>
                 <td style={{ color: 'var(--muted)' }}>{i + 1}</td>
@@ -102,6 +104,7 @@ export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar }: { tipo: 'en
                 <td><select value={l.grupo} onChange={e => setL(i, 'grupo', e.target.value)} style={{ width: 160 }}><option value="">{f.grupo ? 'Padrão: ' + nomeG(f.grupo) : 'Padrão do lote'}</option>{gruposTipo.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select>
                   {l.sugerido && <div style={{ fontSize: 11, color: '#8A6A12' }}>sugerido pelo histórico</div>}</td>
                 <td><select value={l.sub} disabled={!l.grupo} onChange={e => setL(i, 'sub', e.target.value)} style={{ width: 130 }}><option value="">·</option>{cad.subgrupos.filter(s => s.grupo_id === Number(l.grupo)).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></td>
+                {!receber && <td><input list="lote-partes" value={l.cli || ''} placeholder="Opcional" onChange={e => setL(i, 'cli', e.target.value)} style={{ width: 170, borderColor: l.cli && !benef(l.cli) ? 'var(--neg)' : undefined }} title={l.cli && !benef(l.cli) ? 'Escolha um cadastro da lista ou apague' : ''} /></td>}
                 <td><button className="btn ghost mini" title="Repetir esta linha" onClick={() => setF({ ...f, linhas: [...f.linhas.slice(0, i + 1), { ...l, valor: '', doc: '', sugerido: false }, ...f.linhas.slice(i + 1)] })}>⧉</button></td>
               </tr>))}</tbody>
           </table>

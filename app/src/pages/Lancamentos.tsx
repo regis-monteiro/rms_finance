@@ -11,6 +11,7 @@ import SugestaoClassificacao from '../components/SugestaoClassificacao';
 import { EditorRateio, HistoricoPagamentos, linhaVazia, somaRateio } from '../components/Rateio';
 import { DetalheLote } from '../components/Recebimentos';
 import { ModalEditarLote } from '../components/EditarLote';
+import { CampoBeneficiario } from '../components/LoteLancamentos';
 import ConfirmarLotes from '../components/ConfirmarLotes';
 import PrevistasVencidas from '../components/PrevistasVencidas';
 import { pendenciasDeLote, recalcularLote, temOQueReunir, type Candidato } from '../lib/lotes';
@@ -143,7 +144,7 @@ export default function Lancamentos() {
     if (!form) return;
     const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null, centro_custo_id: form.centro_custo_id ? Number(form.centro_custo_id) : null,
       data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null,
-      ...(form.status === 'pago' && form.id && lista.find(x => x.id === form.id)?.status !== 'pago' ? { baixa_anterior: anterior(lista.find(x => x.id === form.id)!) } : {}), juros_multa: Number(form.juros_multa || 0), desconto: Number(form.desconto || 0), atualizado_em: new Date().toISOString() };
+      ...(form.status === 'pago' && form.id && lista.find(x => x.id === form.id)?.status !== 'pago' ? { baixa_anterior: anterior(lista.find(x => x.id === form.id)!) } : {}), juros_multa: Number(form.juros_multa || 0), desconto: Number(form.desconto || 0), cliente_id: form.tipo === 'saida' ? form.cliente_id ?? null : null, atualizado_em: new Date().toISOString() };
     if (dados.beneficiario_id && !String(dados.favorecido || '').trim()) dados.favorecido = beneficiarios.find(b => b.id === dados.beneficiario_id)?.nome || '';
     if (form.status === 'pago' && !dados.conta_id) { setErro('Para marcar como Pago, informe a conta.'); return; }
     if (rateio) {
@@ -348,7 +349,7 @@ export default function Lancamentos() {
                 <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(l.id) : n.delete(l.id); setSel(n); }} /></td>
                 <td>{l.status === 'pago' && l.data_pagamento ? diaMes(l.data_pagamento) : <span style={{ color: 'var(--muted)' }}>·</span>}</td><td style={l.status === 'pago' ? { color: 'var(--muted)' } : undefined}>{diaMes(l.vencimento)}</td><td>{l.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}{l.transferencia_id && <div><span className="tag">Transferência</span></div>}</td>
                 <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(grupos, l.grupo_id)}{comRateio.has(l.id) && <div><span className="tag">Rateio</span></div>}</td><td>{nome(todosSub, l.subgrupo_id) || '·'}</td>
-                <td>{l.favorecido}</td><td>{l.referencia || '·'}</td>
+                <td>{l.favorecido}{l.cliente_id ? <div><span className="tag">Cliente: {nome(beneficiarios, l.cliente_id)}</span></div> : null}</td><td>{l.referencia || '·'}</td>
                 <td className={'r ' + (l.tipo === 'entrada' ? 'pos' : '')}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}{l.titulo_id ? <div><span className="tag">Parcial</span></div> : l.valor_original != null ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.status === 'pago' ? 'última parcela de ' : 'saldo de '}{brl(l.valor_original)}</div> : null}</td>
                 <td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td><td className={'r ' + (saldos[i] < 0 ? 'neg' : '')} style={{ whiteSpace: 'nowrap', color: l.status !== 'pago' && saldos[i] >= 0 ? 'var(--muted)' : undefined }}>{brl(saldos[i])}</td>
               </tr>); })}</tbody>
@@ -411,6 +412,8 @@ export default function Lancamentos() {
                 <HistoricoPagamentos titulo={form as Lancamento} contas={contas} aoMudar={recarregarForm} />}
               {form.id && <DetalheLote lancamentoId={form.id} aoEditar={id => { fechar(); setLoteAberto(id); }} />}
               {form.titulo_id && <p className="full proto" style={{ margin: 0 }}>Este é um {form.tipo === 'entrada' ? 'recebimento' : 'pagamento'} parcial. <a href="#" onClick={async e => { e.preventDefault(); const { data } = await supabase.from('lancamentos').select('*').eq('id', form.titulo_id!).single(); if (data) abrir(data as Lancamento); }}>Abrir a conta original</a> para ver o histórico e o saldo.</p>}
+              {form.tipo === 'saida' && !form.transferencia_id && !form.fatura_id && <label className="full">Cliente relacionado (opcional)
+                <CampoBeneficiario key={'cli-' + (form.id ?? 'novo') + '-' + (beneficiarios.length ? 1 : 0)} cad={{ beneficiarios }} valor={form.cliente_id ?? null} placeholder="Cliente para quem a despesa foi feita: nome ou CPF/CNPJ" aoMudar={b => setForm(x => x && ({ ...x, cliente_id: b?.id ?? null }))} /></label>}
               <label className="full">Observação<input value={form.observacao ?? ''} onChange={e => setForm({ ...form, observacao: e.target.value })} /></label>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full">
