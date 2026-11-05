@@ -29,14 +29,14 @@ async function todos<T>(montar: (de: number, ate: number) => PromiseLike<{ data:
 
 export default function Relatorios() {
   const { usuario } = useAuth();
-  const { contas, grupos, subgrupos, cartoes } = useCadastros();
+  const { contas, grupos, subgrupos, cartoes, beneficiarios } = useCadastros();
   const hoje = hojeISO();
   const [tipo, setTipo] = useState<Tipo>('pagar');
   const [de, setDe] = useState(hoje.slice(0, 8) + '01');
   const [ate, setAte] = useState(() => { const [a, m] = hoje.split('-').map(Number); return `${hoje.slice(0, 8)}${new Date(a, m, 0).getDate()}`; });
   const [selContas, setSelContas] = useState<Set<string>>(new Set());
   const [selCartoes, setSelCartoes] = useState<Set<number>>(new Set());
-  const [opt, setOpt] = useState({ vencidas: true, tipoL: '', statusL: '', base: 'caixa' });
+  const [opt, setOpt] = useState({ vencidas: true, tipoL: '', statusL: '', base: 'caixa', cliente: '' });
   const [gerando, setGerando] = useState<'' | 'pdf' | 'xlsx'>('');
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; m: string } | null>(null);
   const [previa, setPrevia] = useState<{ r: Relatorio | null; carregando: boolean; erro: string }>({ r: null, carregando: true, erro: '' });
@@ -119,19 +119,22 @@ export default function Relatorios() {
     const ids = selCartoes.size ? [...selCartoes] : cartoes.map(c => c.id);
     const fat = await todos<{ id: number; cartao_id: number; cartao: string; competencia: string; data_fechamento: string; data_vencimento: string; total: number; pago: number }>((i, f) =>
       supabase.from('faturas_resumo').select('*').in('cartao_id', ids).gte('data_vencimento', de).lte('data_vencimento', ate).order('data_vencimento').range(i, f));
-    const comp = fat.length ? await todos<{ fatura_id: number; data_compra: string; descricao: string; grupo_id: number; parcela: string | null; valor: number }>((i, f) =>
-      supabase.from('compras_cartao').select('fatura_id,data_compra,descricao,grupo_id,parcela,valor').in('fatura_id', fat.map(x => x.id)).order('data_compra').range(i, f)) : [];
+    const comp = (fat.length ? await todos<{ fatura_id: number; data_compra: string; descricao: string; grupo_id: number; subgrupo_id: number | null; cliente_id: number | null; parcela: string | null; valor: number }>((i, f) =>
+      supabase.from('compras_cartao').select('fatura_id,data_compra,descricao,grupo_id,subgrupo_id,cliente_id,parcela,valor').in('fatura_id', fat.map(x => x.id)).order('data_compra').range(i, f)) : [])
+      .filter(c => !opt.cliente || (opt.cliente === 'com' ? c.cliente_id != null : String(c.cliente_id) === opt.cliente));
+    const porCliente = new Map<string, number>(); comp.forEach(c => { if (c.cliente_id) { const k = nome(beneficiarios, c.cliente_id); porCliente.set(k, (porCliente.get(k) || 0) + Number(c.valor)); } });
     const tt = fat.reduce((s, x) => s + Number(x.total), 0), tpg = fat.reduce((s, x) => s + Number(x.pago), 0);
     const porGrupo = new Map<string, number>(); comp.forEach(c => { const g = nome(grupos, c.grupo_id); porGrupo.set(g, (porGrupo.get(g) || 0) + Number(c.valor)); });
     return { ...base, titulo: 'Cartões de crédito', arquivo: 'cartoes', paisagem: true,
-      filtros: selCartoes.size ? 'Cartões: ' + ids.map(id => nome(cartoes, id)).join(', ') : 'Todos os cartões',
+      filtros: (selCartoes.size ? 'Cartões: ' + ids.map(id => nome(cartoes, id)).join(', ') : 'Todos os cartões') + (opt.cliente === 'com' ? ' · só compras com cliente relacionado (filtro vale para as compras)' : opt.cliente ? ' · cliente: ' + nome(beneficiarios, Number(opt.cliente)) + ' (filtro vale para as compras)' : ''),
       resumo: [{ rotulo: 'Total das faturas', valor: brl(tt) }, { rotulo: 'Pago', valor: brl(tpg) }, { rotulo: 'Saldo em aberto', valor: brl(tt - tpg) }, { rotulo: 'Compras', valor: String(comp.length) }],
       secoes: [
         { titulo: 'Faturas', colunas: [{ titulo: 'Cartão', chave: 'c' }, { titulo: 'Fechamento', chave: 'fe', tipo: 'data' }, { titulo: 'Vencimento', chave: 've', tipo: 'data' }, { titulo: 'Total', chave: 't', tipo: 'moeda' }, { titulo: 'Pago', chave: 'p', tipo: 'moeda' }, { titulo: 'Saldo', chave: 's', tipo: 'moeda' }],
           linhas: [...fat.map(x => ({ c: x.cartao, fe: x.data_fechamento, ve: x.data_vencimento, t: Number(x.total), p: Number(x.pago), s: Number(x.total) - Number(x.pago) })), { c: 'Total', t: tt, p: tpg, s: tt - tpg, _estilo: 'total' as const }] },
         { titulo: 'Gastos por grupo', colunas: [{ titulo: 'Grupo', chave: 'g' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' }], linhas: [...[...porGrupo].sort((a, b) => b[1] - a[1]).map(([g, v]) => ({ g, v })), { g: 'Total', v: comp.reduce((s, c) => s + Number(c.valor), 0), _estilo: 'total' as const }] },
-        { titulo: 'Compras', colunas: [{ titulo: 'Data', chave: 'd', tipo: 'data' }, { titulo: 'Cartão', chave: 'c' }, { titulo: 'Fatura', chave: 'f', tipo: 'data' }, { titulo: 'Estabelecimento', chave: 'e' }, { titulo: 'Grupo', chave: 'g' }, { titulo: 'Parcela', chave: 'pa' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' }],
-          linhas: comp.map(c => { const fx = fat.find(x => x.id === c.fatura_id)!; return { d: c.data_compra, c: fx.cartao, f: fx.data_vencimento, e: c.descricao, g: nome(grupos, c.grupo_id), pa: c.parcela || '', v: Number(c.valor) }; }) },
+        ...(porCliente.size ? [{ titulo: 'Compras por cliente relacionado', colunas: [{ titulo: 'Cliente', chave: 'g' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' as const }], linhas: [...[...porCliente].sort((a, b) => b[1] - a[1]).map(([g, v]) => ({ g, v })), { g: 'Total', v: [...porCliente.values()].reduce((a, v) => a + v, 0), _estilo: 'total' as const }] }] : []),
+        { titulo: 'Compras', colunas: [{ titulo: 'Data', chave: 'd', tipo: 'data' }, { titulo: 'Cartão', chave: 'c' }, { titulo: 'Fatura', chave: 'f', tipo: 'data' }, { titulo: 'Estabelecimento', chave: 'e' }, { titulo: 'Grupo', chave: 'g' }, { titulo: 'Subgrupo', chave: 's' }, { titulo: 'Cliente relacionado', chave: 'cl' }, { titulo: 'Parcela', chave: 'pa' }, { titulo: 'Valor', chave: 'v', tipo: 'moeda' }],
+          linhas: comp.map(c => { const fx = fat.find(x => x.id === c.fatura_id)!; return { d: c.data_compra, c: fx.cartao, f: fx.data_vencimento, e: c.descricao, g: nome(grupos, c.grupo_id), s: nome(subgrupos, c.subgrupo_id), cl: nome(beneficiarios, c.cliente_id), pa: c.parcela || '', v: Number(c.valor) }; }) },
       ] };
   }
 
@@ -154,7 +157,7 @@ export default function Relatorios() {
       catch (e) { if (n === rodada.current) setPrevia({ r: null, carregando: false, erro: (e as Error).message }); }
     }, 450);
     return () => clearTimeout(t);
-  }, [tipo, de, ate, selContas, selCartoes, opt, contas, grupos, subgrupos, cartoes]);
+  }, [tipo, de, ate, selContas, selCartoes, opt, contas, grupos, subgrupos, cartoes, beneficiarios]);
 
   const marcar = <T,>(s: Set<T>, v: T, on: boolean, set: (n: Set<T>) => void) => { const n = new Set(s); on ? n.add(v) : n.delete(v); set(n); };
   return (
@@ -176,6 +179,8 @@ export default function Relatorios() {
             <label>Período por<select value={opt.base} onChange={e => setOpt({ ...opt, base: e.target.value })}><option value="caixa">Pagamento (pagos) ou vencimento (em aberto)</option><option value="vencimento">Vencimento</option><option value="pagamento">Só data de pagamento</option></select></label>
             <label>Tipo e status<select value={opt.tipoL + '|' + opt.statusL} onChange={e => { const [t, s] = e.target.value.split('|'); setOpt({ ...opt, tipoL: t, statusL: s }); }}>
               <option value="|">Todos</option><option value="entrada|">Só entradas</option><option value="saida|">Só saídas</option><option value="|pago">Só pagos</option><option value="|aberto">Só em aberto</option></select></label></>}
+          {tipo === 'cartoes' && <label className="span2">Cliente relacionado<select value={opt.cliente} onChange={e => setOpt({ ...opt, cliente: e.target.value })}>
+            <option value="">Todas as compras</option><option value="com">Só compras com cliente relacionado</option>{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}</select></label>}
         </div>
         {tipo !== 'cartoes' ? (
           <div style={{ marginTop: 14 }}>
