@@ -55,6 +55,7 @@ Aplicativo de controle financeiro interno da RMS Organização Contábil.
 - Versão 1.7: compras do cartão com busca de estabelecimentos (cadastro de fornecedores e já usados, sem obrigar cadastro), subgrupo e observações (script `supabase/020_compras_detalhes.sql`).
 - Versão 1.8: cliente relacionado (opcional) nas compras do cartão, com filtro e total por cliente no relatório de Cartões (script `supabase/021_compras_cliente.sql`).
 - Versão 1.9: Lançamentos em ordem cronológica única (pagamento para pagos, vencimento para abertos; na mesma data, pagos antes) e coluna Saldo projetado a partir do saldo das contas no início do mês.
+- Versão 1.10: aviso de contas Previstas com vencimento passado em Lançamentos, Contas a pagar e Contas a receber, com atualização das datas em lote (data geral ou por linha).
 - Versão 0.9: associação de várias linhas do extrato a um lançamento do app (e o contrário) na conciliação, com somas iguais; rótulos Fornecedor / Beneficiário nos pagamentos e Cliente / Origem nos recebimentos (script `supabase/012_associacao_conciliacao.sql`).
 
 Configuração: ver `docs/configuracao.md`.

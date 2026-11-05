@@ -8,6 +8,7 @@ import { useAnos, MESES_LONGOS } from '../lib/analises';
 import { GraficoBarras, MESES_CURTOS } from '../lib/graficos';
 import { Cabecalho } from '../components/Layout';
 import { AbaEmAberto, ModalLancarRecebimentos } from '../components/Recebimentos';
+import PrevistasVencidas from '../components/PrevistasVencidas';
 import { ImportarBoletos } from '../components/ImportarBoletos';
 import { ModalLancarContas } from '../components/LancarContas';
 import { usePersistente } from '../lib/rascunho';
@@ -75,6 +76,7 @@ export default function Receber() {
         {edita && <button className="btn ghost" onClick={() => setLote(true)}>+ Novas contas a receber</button>}
         {edita && <button className="btn ghost" onClick={() => setImportar(true)}>Importar boletos</button>}
         {edita && <button className="btn gold" onClick={() => setLancar(true)}>Lançar recebimentos</button>}</Cabecalho>
+      {edita && <PrevistasVencidas tipo="entrada" recarga={versao} aoMudar={() => setVersao(v => v + 1)} />}
       <div className="tabs">
         <button className={aba === 'resumo' ? 'on' : ''} onClick={() => setAba('resumo')}>Resumo por grupo</button>
         {edita && <button className={aba === 'aberto' ? 'on' : ''} onClick={() => setAba('aberto')}>Em aberto por cliente</button>}

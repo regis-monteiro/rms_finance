@@ -13,6 +13,7 @@ import { registrarPagamento } from '../lib/titulos';
 import { sincronizarDesconto } from '../lib/descontos';
 import { pendenciasDeLote, temOQueReunir, type Candidato } from '../lib/lotes';
 import ConfirmarLotes from '../components/ConfirmarLotes';
+import PrevistasVencidas from '../components/PrevistasVencidas';
 import { ModalLancarContas } from '../components/LancarContas';
 import { ModalAlterarLote } from '../components/LoteLancamentos';
 import { BarraSelecao, ModalBaixarVarias, ModalExcluirContas } from '../components/AcoesSelecao';
@@ -105,6 +106,7 @@ export default function Pagar() {
   return (
     <>
       <Cabecalho titulo="Contas a pagar" sub="Saídas em aberto, uma a uma, incluindo saldos de faturas de cartão">{aviso && <span className="ok">{aviso}</span>}<button className="btn gold" onClick={() => setLote(true)}>+ Novas contas a pagar</button></Cabecalho>
+      <PrevistasVencidas tipo="saida" recarga={versao} aoMudar={() => setVersao(v => v + 1)} />
       {acao === 'alterar' && <ModalAlterarLote itens={marcados} cad={{ contas, grupos, subgrupos, beneficiarios }} hoje={hoje} aoFechar={() => setAcao('')} aoSalvar={n => { setAcao(''); setSel(new Set()); avisar(n + ' conta(s) alterada(s).'); setVersao(v => v + 1); }} />}
       {acao === 'excluir' && <ModalExcluirContas itens={marcados} aoFechar={() => setAcao('')} aoConcluir={(m, f) => { setAcao(''); setSel(new Set()); avisar(m); if (f.length) setErroLista('Não excluídas: ' + f.join(' · ')); setVersao(v => v + 1); }} />}
       {acao === 'baixar' && <ModalBaixarVarias itens={marcados} contas={contas} hoje={hoje} aoFechar={() => setAcao('')} aoConcluir={async (ids, m) => { setAcao(''); setSel(new Set()); avisar(m); setVersao(v => v + 1); const p = (await pendenciasDeLote(ids)).filter(temOQueReunir); if (p.length) setLotesDia(p); }} />}

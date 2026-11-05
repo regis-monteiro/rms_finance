@@ -12,6 +12,7 @@ import { EditorRateio, HistoricoPagamentos, linhaVazia, somaRateio } from '../co
 import { DetalheLote } from '../components/Recebimentos';
 import { ModalEditarLote } from '../components/EditarLote';
 import ConfirmarLotes from '../components/ConfirmarLotes';
+import PrevistasVencidas from '../components/PrevistasVencidas';
 import { pendenciasDeLote, recalcularLote, temOQueReunir, type Candidato } from '../lib/lotes';
 import { sincronizarDesconto } from '../lib/descontos';
 import { anterior, carregarRateio, desfazerBaixa, gravarRateio, type LinhaRateio } from '../lib/titulos';
@@ -293,6 +294,7 @@ export default function Lancamentos() {
         <span className="chip" style={{ fontSize: 13, padding: '7px 12px' }}>{MESES[m - 1]}/{ano}</span>
         <button className="btn ghost" onClick={() => setMes(`${m === 12 ? ano + 1 : ano}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`)}>›</button>
       </Cabecalho>
+      <PrevistasVencidas recarga={versao} aoMudar={() => setVersao(v => v + 1)} />
       <div className="tabs">
         <button className={aba === 'lanc' ? 'on' : ''} onClick={() => setAba('lanc')}>Lançamentos</button>
         <button className={aba === 'rend' ? 'on' : ''} onClick={() => setAba('rend')}>Rendimentos de aplicações</button>
