@@ -144,6 +144,7 @@ export default function Lancamentos() {
     const dados = { ...form, valor: Number(form.valor), conta_id: form.conta_id ? Number(form.conta_id) : null, grupo_id: Number(form.grupo_id), subgrupo_id: form.subgrupo_id ? Number(form.subgrupo_id) : null, centro_custo_id: form.centro_custo_id ? Number(form.centro_custo_id) : null,
       data_pagamento: form.status === 'pago' ? (form.data_pagamento || form.vencimento) : null,
       ...(form.status === 'pago' && form.id && lista.find(x => x.id === form.id)?.status !== 'pago' ? { baixa_anterior: anterior(lista.find(x => x.id === form.id)!) } : {}), juros_multa: Number(form.juros_multa || 0), desconto: Number(form.desconto || 0), atualizado_em: new Date().toISOString() };
+    if (dados.beneficiario_id && !String(dados.favorecido || '').trim()) dados.favorecido = beneficiarios.find(b => b.id === dados.beneficiario_id)?.nome || '';
     if (form.status === 'pago' && !dados.conta_id) { setErro('Para marcar como Pago, informe a conta.'); return; }
     if (rateio) {
       const validas = rateio.filter(l => l.grupo_id && Number(l.valor) > 0);
@@ -264,7 +265,8 @@ export default function Lancamentos() {
   }
   const abrir = (l: Form) => {
     setConfirmaDesfazer(false);
-    setErro(''); setBuscaBenef(rotulo(beneficiarios.find(b => b.id === l.beneficiario_id))); setForm(l); setRateio(null);
+    const b = beneficiarios.find(x => x.id === l.beneficiario_id);
+    setErro(''); setBuscaBenef(rotulo(b)); setForm(b && !(l.favorecido || '').trim() ? { ...l, favorecido: b.nome } : l); setRateio(null);
     if (l.id) carregarRateio(l.id).then(r => r.length && setRateio(r.map(x => ({ grupo_id: x.grupo_id, subgrupo_id: x.subgrupo_id, centro_custo_id: x.centro_custo_id,
       valor: String(Math.round(Number(x.fracao) * Number(l.valor) * 100) / 100), pct: String(Math.round(Number(x.fracao) * 10000) / 100) }))));
   };
@@ -272,7 +274,9 @@ export default function Lancamentos() {
     setVersao(v => v + 1);
     if (!form?.id) return;
     const { data } = await supabase.from('lancamentos').select('*').eq('id', form.id).single();
-    if (data) setForm({ ...form, ...(data as Lancamento) });
+    // traz só o que o pagamento parcial muda, sem perder o que já foi digitado no formulário (como o fornecedor escolhido)
+    const d = data as Lancamento | null;
+    if (d) setForm(f => f && ({ ...f, valor: d.valor, valor_original: d.valor_original, status: d.status, data_pagamento: d.data_pagamento, baixa_anterior: d.baixa_anterior }));
   };
   const novo = () => { setErro(''); setBuscaBenef(''); setRateio(null); setForm({ tipo: 'saida', vencimento: hoje, status: 'previsto', forma_pagamento: 'Boleto', favorecido: '', valor: undefined }); };
   const subsDoGrupo = subgrupos.filter(s => s.grupo_id === Number(form?.grupo_id));
@@ -285,6 +289,13 @@ export default function Lancamentos() {
     if (!b) { if (!texto) setForm({ ...form, beneficiario_id: null }); return; }
     setForm({ ...form, beneficiario_id: b.id, favorecido: b.nome, grupo_id: form.grupo_id || b.grupo_id || undefined, subgrupo_id: form.grupo_id ? form.subgrupo_id : b.subgrupo_id });
   }
+  // campo de busca mostra um cadastro, mas o formulário perdeu o vínculo: restaura (evita pedir o fornecedor de novo)
+  useEffect(() => {
+    if (form?.beneficiario_id && !buscaBenef) { const b = beneficiarios.find(x => x.id === form.beneficiario_id); if (b) setBuscaBenef(rotulo(b)); return; }
+    if (!form || form.beneficiario_id || !buscaBenef) return;
+    const b = beneficiarios.find(x => rotulo(x) === buscaBenef);
+    if (b) setForm({ ...form, beneficiario_id: b.id, favorecido: (form.favorecido || '').trim() || b.nome });
+  }, [buscaBenef, form?.beneficiario_id, beneficiarios]);
   const [ano, m] = mes.split('-').map(Number);
 
   return (
