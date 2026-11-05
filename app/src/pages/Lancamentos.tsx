@@ -79,7 +79,7 @@ export default function Lancamentos() {
     supabase.from('lancamentos').select('*').or(`and(status.eq.pago,data_pagamento.gte.${mes}-01,data_pagamento.lte.${mes}-${fim}),and(status.neq.pago,vencimento.gte.${mes}-01,vencimento.lte.${mes}-${fim})`).order('id').range(0, 4999)
       .then(async ({ data }) => {
         // Ordem pela data de pagamento (pagos) ou de vencimento (em aberto), como no fluxo de caixa
-        const ls = ((data as Lancamento[]) || []).sort((a, b) => dataEfetiva(a).localeCompare(dataEfetiva(b)) || a.id - b.id); setLista(ls); setSel(new Set());
+        const ls = ((data as Lancamento[]) || []).sort((a, b) => dataEfetiva(a).localeCompare(dataEfetiva(b)) || (a.status === 'pago' ? 0 : 1) - (b.status === 'pago' ? 0 : 1) || a.id - b.id); setLista(ls); setSel(new Set());
         const ids = ls.map(l => l.id), com = new Set<number>();
         for (let i = 0; i < ids.length; i += 200) {
           const r = await supabase.from('lancamento_rateios').select('lancamento_id').in('lancamento_id', ids.slice(i, i + 200));
@@ -118,6 +118,20 @@ export default function Lancamentos() {
     }
     return out;
   }, [linhas, lotes]);
+  // Saldo projetado: parte do saldo das contas no fim do mês anterior e soma cada linha exibida (pagas e em aberto)
+  const [saldoIni, setSaldoIni] = useState<number | null>(null);
+  useEffect(() => {
+    const [a, m] = mes.split('-').map(Number);
+    const ant = new Date(a, m - 1, 0), dia = `${ant.getFullYear()}-${String(ant.getMonth() + 1).padStart(2, '0')}-${String(ant.getDate()).padStart(2, '0')}`;
+    const ids = f.conta ? [Number(f.conta)] : contas.map(c => c.id);
+    if (!ids.length) return;
+    Promise.all(ids.map(id => supabase.rpc('saldo_conta_em', { p_conta: id, p_data: dia }))).then(rs => setSaldoIni(rs.reduce((t, r) => t + Number(r.data || 0), 0)));
+  }, [mes, f.conta, contas, versao]);
+  const saldos = useMemo(() => {
+    let s = saldoIni ?? 0; const out: number[] = [];
+    for (const x of exibicao) { s = Math.round((s + (x.tipo === 'entrada' ? 1 : -1) * Number('lote' in x ? x.valor : x.valor)) * 100) / 100; out.push(s); }
+    return out;
+  }, [exibicao, saldoIni]);
   const pagosSel = lista.filter(l => sel.has(l.id) && l.status === 'pago' && !l.fatura_id).length;
   const pendentesSel = lista.filter(l => sel.has(l.id) && l.status !== 'pago').length;
   const ent = linhas.filter(l => l.tipo === 'entrada').reduce((a, l) => a + Number(l.valor), 0);
@@ -307,14 +321,14 @@ export default function Lancamentos() {
         {linhas.length === 0 ? <div className="empty">Nenhum lançamento neste mês.</div> : (
           <table className="compacta">
             <thead><tr><th className="c"><input type="checkbox" checked={linhas.length > 0 && linhas.filter(l => !lotes.has(l.id)).every(l => sel.has(l.id))} onChange={e => setSel(e.target.checked ? new Set(linhas.filter(l => !lotes.has(l.id)).map(l => l.id)) : new Set())} /></th>
-              <th>Pagamento</th><th>Vencimento</th><th>Tipo</th><th>Conta</th><th>Grupo</th><th>Subgrupo</th><th>{ROTULO_PARTE}</th><th>Ref.</th><th className="r">Valor</th><th>Status</th></tr></thead>
-            <tbody>{exibicao.map(x => { if ('lote' in x) return (
+              <th>Pagamento</th><th>Vencimento</th><th>Tipo</th><th>Conta</th><th>Grupo</th><th>Subgrupo</th><th>{ROTULO_PARTE}</th><th>Ref.</th><th className="r">Valor</th><th>Status</th><th className="r" title="Projeção: saldo das contas no início do mês somado às linhas, pagas e em aberto">Saldo</th></tr></thead>
+            <tbody>{saldoIni != null && <tr><td colSpan={11} style={{ textAlign: 'right', fontSize: 12.5, color: 'var(--muted)', background: '#FBF9F3' }}>Saldo no início do mês{f.conta ? ' · ' + nome(contas, Number(f.conta)) : ' · todas as contas'}</td><td className={'r ' + (saldoIni < 0 ? 'neg' : '')} style={{ background: '#FBF9F3', fontWeight: 600, whiteSpace: 'nowrap' }}>{brl(saldoIni)}</td></tr>}{exibicao.map((x, i) => { if ('lote' in x) return (
               <tr key={'lote' + x.lote} className="clicavel" title="Ver e editar o lote" onClick={() => setLoteAberto(x.lote)}>
                 <td className="c" />
                 <td>{diaMes(x.data)}</td><td style={{ color: 'var(--muted)' }}>·</td><td>{x.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}<div><span className="tag">Lote</span></div></td>
                 <td>{nome(contas, x.conta)}</td><td>{x.grupos.length === 1 ? nome(grupos, x.grupos[0]) : 'Vários'}</td><td>{x.subs.length === 1 ? nome(todosSub, x.subs[0]) || '·' : 'Vários'}</td>
                 <td>{x.tipo === 'entrada' ? `Recebimento em lote (${x.n} ${x.n > 1 ? 'itens' : 'item'})` : `Pagamento em lote (${x.n} ${x.n > 1 ? 'itens' : 'item'})`}</td><td>·</td>
-                <td className={'r ' + (x.tipo === 'entrada' ? 'pos' : '')}>{x.tipo === 'saida' ? '−' : ''}{brl(x.valor)}</td><td><span className="st pago">Pago</span></td>
+                <td className={'r ' + (x.tipo === 'entrada' ? 'pos' : '')}>{x.tipo === 'saida' ? '−' : ''}{brl(x.valor)}</td><td><span className="st pago">Pago</span></td><td className={'r ' + (saldos[i] < 0 ? 'neg' : '')} style={{ whiteSpace: 'nowrap' }}>{brl(saldos[i])}</td>
               </tr>);
               const l = x; const s = statusEfetivo(l.status, l.vencimento); return (
               <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => abrir({ ...l })}>
@@ -323,7 +337,7 @@ export default function Lancamentos() {
                 <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(grupos, l.grupo_id)}{comRateio.has(l.id) && <div><span className="tag">Rateio</span></div>}</td><td>{nome(todosSub, l.subgrupo_id) || '·'}</td>
                 <td>{l.favorecido}</td><td>{l.referencia || '·'}</td>
                 <td className={'r ' + (l.tipo === 'entrada' ? 'pos' : '')}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}{l.titulo_id ? <div><span className="tag">Parcial</span></div> : l.valor_original != null ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.status === 'pago' ? 'última parcela de ' : 'saldo de '}{brl(l.valor_original)}</div> : null}</td>
-                <td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td>
+                <td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td><td className={'r ' + (saldos[i] < 0 ? 'neg' : '')} style={{ whiteSpace: 'nowrap', color: l.status !== 'pago' && saldos[i] >= 0 ? 'var(--muted)' : undefined }}>{brl(saldos[i])}</td>
               </tr>); })}</tbody>
           </table>
         )}
