@@ -45,10 +45,19 @@ export default function Evolucao({ conta, centro }: { conta: number | null; cent
   useEffect(() => {
     setCarregando(true); setErro('');
     // o ano anterior ao início entra para comparar o acumulado e a média de 12 meses
-    supabase.rpc('evolucao_mensal', { p_de: de - 1, p_ate: ate, p_conta: conta, p_centro: centro }).then(({ data, error }) => {
-      if (error) setErro(/evolucao_mensal/.test(error.message) ? 'Rode o arquivo 023_evolucao.sql no Supabase para habilitar a Evolução.' : error.message);
-      setPts((data as Ponto[]) || []); setCarregando(false);
-    });
+    let vivo = true;
+    (async () => {
+      // o servidor devolve no máximo 1.000 linhas por consulta: busca em páginas até acabar
+      const todos: Ponto[] = [];
+      for (let i = 0; ; i += 1000) {
+        const { data, error } = await supabase.rpc('evolucao_mensal', { p_de: de - 1, p_ate: ate, p_conta: conta, p_centro: centro }).order('ano').order('mes').order('linha_dre_id').order('grupo_id').order('subgrupo_id').range(i, i + 999);
+        if (error) { if (vivo) setErro(/evolucao_mensal/.test(error.message) ? 'Rode o arquivo 023_evolucao.sql no Supabase para habilitar a Evolução.' : error.message); break; }
+        todos.push(...((data as Ponto[]) || []));
+        if (!data || data.length < 1000) break;
+      }
+      if (vivo) { setPts(todos); setCarregando(false); }
+    })();
+    return () => { vivo = false; };
   }, [de, ate, conta, centro]);
 
   const resultadoIds = useMemo(() => new Set(linhas.filter(l => l.no_resultado).map(l => l.id)), [linhas]);
@@ -117,7 +126,8 @@ export default function Evolucao({ conta, centro }: { conta: number | null; cent
   const opcoes = [
     { g: 'Linhas do DRE', o: [['R', 'Resultado líquido'], ...linhas.filter(l => l.no_resultado).map(l => ['L:' + l.id, l.nome])] },
     { g: 'Grupos', o: grupos.filter(g => g.natureza !== 'movimentacao' && g.ativo).map(g => ['G:' + g.id, g.nome]) },
-    { g: 'Subgrupos', o: todosSub.filter(s => s.ativo !== false).map(s => ['S:' + s.id, `${grupos.find(g => g.id === s.grupo_id)?.nome || ''} · ${s.nome}`]).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')) },
+    // custos e despesas só por grupo; subgrupos apenas nas receitas
+    { g: 'Subgrupos de receita', o: todosSub.filter(s => s.ativo !== false && grupos.find(g => g.id === s.grupo_id)?.natureza === 'receita').map(s => ['S:' + s.id, `${grupos.find(g => g.id === s.grupo_id)?.nome || ''} · ${s.nome}`]).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')) },
   ];
   const fmtPct = (v: number | null) => (v == null || !isFinite(v) ? '·' : pct(v));
   const fmtBrl = (v: number | null) => (v == null ? '·' : brl(v));

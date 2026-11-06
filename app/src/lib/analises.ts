@@ -23,9 +23,15 @@ export function useAnos() {
 }
 
 export async function carregarDRE(ano: number, conta: number | null, centro: number | null = null) {
-  const { data, error } = await supabase.rpc('dre_mensal', { p_ano: ano, p_conta: conta, p_centro: centro });
-  if (error) throw error;
-  return (data as PontoDRE[]) || [];
+  // paginado: o servidor devolve no máximo 1.000 linhas por consulta
+  const out: PontoDRE[] = [];
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await supabase.rpc('dre_mensal', { p_ano: ano, p_conta: conta, p_centro: centro }).order('mes').order('linha_dre_id').order('grupo_id').range(i, i + 999);
+    if (error) throw error;
+    out.push(...((data as PontoDRE[]) || []));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
 }
 
 /** Resultado (soma das linhas do resultado) por mês, 12 posições */
