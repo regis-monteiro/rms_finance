@@ -8,8 +8,9 @@ import { ModalEmissao } from '../components/Emissao';
 import { gerarExcel, gerarPDF, type Relatorio } from '../lib/relatorios';
 import { useAuth } from '../lib/auth';
 import type { Signatario } from '../components/Signatarios';
+import Evolucao from '../components/Evolucao';
 
-type Tipo = 'mes' | 'ano' | 'acum';
+type Tipo = 'mes' | 'ano' | 'acum' | 'evol';
 const soma = (a: number[]) => a.reduce((x, y) => x + y, 0);
 
 export default function Comparativos() {
@@ -107,16 +108,17 @@ export default function Comparativos() {
 
   return (
     <>
-      <Cabecalho titulo="Comparativos" sub="Evolução, tendências e variações em R$ e %"><button className="btn" onClick={() => setEmitir(true)}>Emitir PDF / Excel</button></Cabecalho>
+      <Cabecalho titulo="Comparativos" sub="Evolução, tendências e variações em R$ e %">{tipo !== 'evol' && <button className="btn" onClick={() => setEmitir(true)}>Emitir PDF / Excel</button>}</Cabecalho>
       {emitir && <ModalEmissao titulo={`Comparativos ${rotA} x ${rotB}`} aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio} />}
       <div className="filters">
-        <div className="tabs" style={{ margin: 0, border: 0 }}>{([['mes', 'Mês anterior'], ['ano', 'Mesmo mês do ano anterior'], ['acum', 'Acumulado do ano']] as [Tipo, string][]).map(([k, t]) => <button key={k} className={tipo === k ? 'on' : ''} onClick={() => setTipo(k)}>{t}</button>)}</div>
+        <div className="tabs" style={{ margin: 0, border: 0 }}>{([['mes', 'Mês anterior'], ['ano', 'Mesmo mês do ano anterior'], ['acum', 'Acumulado do ano'], ['evol', 'Evolução']] as [Tipo, string][]).map(([k, t]) => <button key={k} className={tipo === k ? 'on' : ''} onClick={() => setTipo(k)}>{t}</button>)}</div>
         <span style={{ flex: 1 }} />
         <select value={conta ?? ''} onChange={e => setConta(e.target.value ? Number(e.target.value) : null)}><option value="">Todas as contas</option>{contas.filter(c => c.ativa).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>
         <select value={centro ?? ''} onChange={e => setCentro(e.target.value ? Number(e.target.value) : null)}><option value="">Todos os centros de custo</option><OpcoesCentro centros={centros} /></select>
-        <select value={mes} onChange={e => setMes(Number(e.target.value))}>{MESES_LONGOS.map((m, i) => <option key={m} value={i + 1}>Mês base: {m}</option>)}</select>
-        <select value={ano} onChange={e => setAno(Number(e.target.value))}>{anos.map(a => <option key={a}>{a}</option>)}</select>
+        {tipo !== 'evol' && <><select value={mes} onChange={e => setMes(Number(e.target.value))}>{MESES_LONGOS.map((m, i) => <option key={m} value={i + 1}>Mês base: {m}</option>)}</select>
+        <select value={ano} onChange={e => setAno(Number(e.target.value))}>{anos.map(a => <option key={a}>{a}</option>)}</select></>}
       </div>
+      {tipo === 'evol' ? <Evolucao conta={conta} centro={centro} /> : <>
       {semAnterior && tipo !== 'mes' && <div className="proto" style={{ marginBottom: 14 }}>Ainda não há dados de {ano - 1}. Os comparativos com o ano anterior ficam completos depois da importação das planilhas desse ano.</div>}
       <div className="grid g3">{kpi('Receita de serviços', rec)}{kpi('Custos e despesas', desp, true)}{kpi('Resultado líquido', res)}</div>
       <div className="grid g2 mt">
@@ -148,6 +150,7 @@ export default function Comparativos() {
           <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Projeção por tendência linear dos meses fechados. Não considera sazonalidade (ex.: IRPF, 13º).</p>
         </div>
       </div>
+      </>}
     </>
   );
 }

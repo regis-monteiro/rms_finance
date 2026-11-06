@@ -123,7 +123,8 @@ export default function Conciliacao() {
       const r = await supabase.from('conciliacao_itens').insert(itens);
       if (r.error) { await supabase.from('conciliacao_grupos').delete().eq('id', g.data.id); throw new Error(r.error.message); }
       setMsg(`Associadas ${linhas.length} linha(s) do extrato a ${lancs.length} lançamento(s) do app.`);
-      setAssocAberta(null); setVersao(v => v + 1);
+      // a tela continua aberta para a próxima associação, com a seleção limpa
+      setAssocAberta(a => a && { ...a, ext: [], app: [] }); setVersao(v => v + 1);
     } catch (e) { setErro((e as Error).message); }
     setProc(false);
   }
@@ -322,7 +323,7 @@ export default function Conciliacao() {
                   <button key={k} className={filtro === k ? 'on' : ''} onClick={() => setFiltro(k)}>{t}</button>)}
               </div>
               <span style={{ flex: 1 }} />
-              <button className="btn ghost" onClick={() => setAssocAberta({ ext: [], app: [], busca: '' })} title="Junte várias linhas do extrato a um lançamento do app, ou o contrário">Associar lançamentos</button>
+              <button className="btn ghost" onClick={() => { setMsg(''); setAssocAberta({ ext: [], app: [], busca: '' }); }} title="Junte várias linhas do extrato a um lançamento do app, ou o contrário">Associar lançamentos</button>
               <button className="btn" disabled={!aAplicar || proc} onClick={aplicar}>{proc ? 'Gravando…' : `Aplicar selecionados (${aAplicar})`}</button>
             </div>
             <table className="compacta conc">
@@ -428,7 +429,8 @@ export default function Conciliacao() {
                 <span>Diferença: <b className={Math.abs(dif) < 0.005 ? 'pos' : 'neg'}>{brl(dif)}</b></span>
               </div>
               {erro && <div className="err">{erro}</div>}
-              <div className="actions"><button type="button" className="btn ghost" onClick={() => setAssocAberta(null)}>Cancelar</button>
+              {msg && !erro && <div className="ok">{msg} Selecione as próximas linhas ou feche.</div>}
+              <div className="actions"><button type="button" className="btn ghost" onClick={() => { setAssocAberta(null); }}>Fechar</button>
                 <button className="btn" disabled={!ok || proc} title={ok ? '' : 'Os totais precisam ser iguais'} onClick={() => associar(selE, selA)}>{proc ? 'Gravando…' : 'Associar'}</button></div>
             </div>
           </div>);

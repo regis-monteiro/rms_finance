@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import CampoValor from './CampoValor';
 import DataBR from './DataBR';
 import { supabase, type Beneficiario, type CentroCusto, type Conta, type Grupo, type Lancamento, type Subgrupo } from '../lib/supabase';
@@ -185,7 +185,7 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
 /* ---------------- Lançar recebimentos (lote consolidado, até 50 valores) ---------------- */
 interface LinhaRec { cliente: string; valor: string }
 const LINHAS = 50;
-export function ModalLancarRecebimentos({ cad, aoFechar, aoSalvar }: { cad: Cad; aoFechar: () => void; aoSalvar: (m: string) => void }) {
+export function ModalLancarRecebimentos({ cad, aoFechar, aoSalvar, aoGravar }: { cad: Cad; aoFechar: () => void; aoSalvar: (m: string) => void; aoGravar?: (m: string) => void }) {
   const honor = cad.grupos.find(g => g.nome === 'Honorários');
   const [f, setF] = usePersistente('rec:lote', () => {
     let ult: { unit?: string; benef?: string } = {};
@@ -195,6 +195,8 @@ export function ModalLancarRecebimentos({ cad, aoFechar, aoSalvar }: { cad: Cad;
   });
   const [erro, setErro] = useState('');
   const [proc, setProc] = useState(false);
+  const [ok, setOk] = useState('');
+  const continuar = useRef(false);
   const preenchidas = f.linhas.filter(l => Number(l.valor) > 0);
   const total = r2(preenchidas.reduce((a, l) => a + Number(l.valor), 0)), n = preenchidas.length;
   const tarifa = f.tarifa.houve ? r2(n * Number(f.tarifa.unit || 0)) : 0;
@@ -224,7 +226,11 @@ export function ModalLancarRecebimentos({ cad, aoFechar, aoSalvar }: { cad: Cad;
       if (ri.error) throw new Error(ri.error.message);
       try { localStorage.setItem('rms-tarifa-boleto', JSON.stringify({ unit: f.tarifa.unit, benef: f.tarifa.benef })); } catch { /* ignora */ }
       invalidarDicionario(); limparRascunhos('rec:lote');
-      aoSalvar(`Lançado o recebimento consolidado de ${brl(total)} (${n} boleto(s))${idTarifa ? ` e a tarifa de ${brl(tarifa)}` : ''}.`);
+      const m = `Lançado o recebimento consolidado de ${brl(total)} (${n} boleto(s))${idTarifa ? ` e a tarifa de ${brl(tarifa)}` : ''}.`;
+      if (continuar.current && aoGravar) {
+        continuar.current = false;
+        setF({ ...f, linhas: Array.from({ length: LINHAS }, () => ({ cliente: '', valor: '' })) }); setOk(m + ' Grade pronta para o próximo lote.'); aoGravar(m);
+      } else aoSalvar(m);
     } catch (err) { setErro((err as Error).message); }
     setProc(false);
   }
@@ -257,7 +263,10 @@ export function ModalLancarRecebimentos({ cad, aoFechar, aoSalvar }: { cad: Cad;
           </div>
           <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Gera um lançamento de entrada com o total e, se houver, um lançamento de tarifa. Ao abrir qualquer um deles em Lançamentos, aparece o detalhamento dos valores digitados.</p>
           {erro && <div className="err full">{erro}</div>}
-          <div className="actions full"><button type="button" className="btn ghost" onClick={fechar}>Cancelar</button><button className="btn" disabled={proc}>{proc ? 'Gravando…' : 'Lançar recebimentos'}</button></div>
+          {ok && <div className="ok full">{ok}</div>}
+          <div className="actions full"><button type="button" className="btn ghost" onClick={fechar}>Fechar</button>
+            {aoGravar && <button className="btn ghost" disabled={proc} onClick={() => { continuar.current = true; }}>Lançar e abrir outro lote</button>}
+            <button className="btn" disabled={proc} onClick={() => { continuar.current = false; }}>{proc ? 'Gravando…' : 'Lançar recebimentos'}</button></div>
         </form>
       </div>
     </div>

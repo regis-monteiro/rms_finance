@@ -16,7 +16,7 @@ export function palavras(s: string | null | undefined) {
 }
 
 /** Semelhança entre os textos (coeficiente de Dice sobre as palavras significativas) */
-function semelhanca(a: string[], b: string[]) {
+export function semelhanca(a: string[], b: string[]) {
   if (!a.length || !b.length) return 0;
   const sb = new Set(b); const comuns = a.filter(w => sb.has(w)).length;
   return (2 * comuns) / (a.length + b.length);

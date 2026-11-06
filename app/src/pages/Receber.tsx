@@ -111,9 +111,9 @@ export default function Receber() {
       </div>
 
       </>}
-      {lote && <ModalLancarContas tipo="entrada" cad={cad} aoFechar={() => setLote(false)} aoSalvar={m => { setLote(false); setMsg(m); setTimeout(() => setMsg(''), 6000); setAba('aberto'); setVersao(v => v + 1); }} />}
+      {lote && <ModalLancarContas tipo="entrada" cad={cad} aoFechar={() => setLote(false)} aoSalvar={m => { setLote(false); setMsg(m); setTimeout(() => setMsg(''), 6000); setAba('aberto'); setVersao(v => v + 1); }} aoGravar={() => setVersao(v => v + 1)} />}
       {importar && <ImportarBoletos cad={cad} aoFechar={() => setImportar(false)} aoConcluir={m => { setImportar(false); setMsg(m); setTimeout(() => setMsg(''), 8000); setAba('aberto'); setVersao(v => v + 1); }} />}
-      {lancar && <ModalLancarRecebimentos cad={cad} aoFechar={() => setLancar(false)} aoSalvar={m => { setLancar(false); setMsg(m); setTimeout(() => setMsg(''), 6000); setVersao(v => v + 1); }} />}
+      {lancar && <ModalLancarRecebimentos cad={cad} aoFechar={() => setLancar(false)} aoSalvar={m => { setLancar(false); setMsg(m); setTimeout(() => setMsg(''), 6000); setVersao(v => v + 1); }} aoGravar={() => setVersao(v => v + 1)} />}
       {gerar && (
         <div className="modal-bg open">
           <div className="modal"><h2>Gerar previsão de {ano}</h2>

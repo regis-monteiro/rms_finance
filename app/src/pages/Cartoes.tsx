@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { useSearchParams } from 'react-router-dom';
@@ -37,6 +37,8 @@ export default function Cartoes() {
   const [editC, setEditC] = useState<{ ids: number[]; data: string; descricao: string; grupo: string; sub: string; centro: string; valor: string; obs: string; benef: string; cliente: string } | null>(null);
   const [historico, setHistorico] = useState<Estab[]>([]);
   const [confExcluir, setConfExcluir] = useState(false);
+  const continuarCompra = useRef(false);
+  const [okCompra, setOkCompra] = useState('');
 
   useEffect(() => {
     supabase.from('faturas_resumo').select('*').order('competencia').then(({ data }) => {
@@ -124,7 +126,13 @@ export default function Cartoes() {
       }
       for (const fid of tocadas) await sincronizarFatura(fid);
     } catch (err) { setErro((err as Error).message); return; }
-    setNovaCompra(null); recarregar();
+    if (continuarCompra.current) {
+      // Salvar e lançar outra: mantém data, grupo, subgrupo e centro
+      continuarCompra.current = false;
+      setOkCompra(`Compra "${novaCompra.descricao.trim()}" de ${brl(Number(novaCompra.valor))} salva. Pode lançar a próxima.`);
+      setNovaCompra({ ...novaCompra, descricao: '', valor: '', parcelas: '1', obs: '', benef: '', cliente: '' });
+    } else setNovaCompra(null);
+    recarregar();
   }
 
   async function excluirCompras(ids: number[]) {
@@ -189,7 +197,7 @@ export default function Cartoes() {
   return (
     <>
       <Cabecalho titulo="Cartões" sub="Compras, faturas e pagamentos dos cartões empresariais">
-        <button className="btn gold" disabled={!cartao} onClick={() => { setErro(''); setNovaCompra({ data: hoje, descricao: '', grupo: '', valor: '', parcelas: '1' }); }}>+ Nova compra</button>
+        <button className="btn gold" disabled={!cartao} onClick={() => { setErro(''); setOkCompra(''); setNovaCompra({ data: hoje, descricao: '', grupo: '', valor: '', parcelas: '1' }); }}>+ Nova compra</button>
       </Cabecalho>
       <div className="grid g4">
         {cartoes.filter(c => c.ativo).map(c => (
@@ -288,7 +296,10 @@ export default function Cartoes() {
                 {novaCompra.data && `Entra na fatura com vencimento em ${dataBR(datasFatura(cartao, novaCompra.data).data_vencimento)}`}
                 {Number(novaCompra.parcelas) > 1 && `, em ${novaCompra.parcelas} parcelas mensais`}. Valor negativo registra estorno.</p>
               {erro && <div className="err full">{erro}</div>}
-              <div className="actions full"><button type="button" className="btn ghost" onClick={() => setNovaCompra(null)}>Cancelar</button><button className="btn">Salvar</button></div>
+              {okCompra && <div className="ok full">{okCompra}</div>}
+              <div className="actions full"><button type="button" className="btn ghost" onClick={() => setNovaCompra(null)}>Fechar</button>
+                <button className="btn ghost" onClick={() => { continuarCompra.current = true; }} title="Grava e abre outra em branco, com a mesma data e classificação">Salvar e lançar outra</button>
+                <button className="btn" onClick={() => { continuarCompra.current = false; }}>Salvar</button></div>
             </form>
           </div>
         </div>

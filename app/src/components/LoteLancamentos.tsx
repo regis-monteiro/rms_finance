@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import CampoValor from './CampoValor';
 import DataBR from './DataBR';
 import { supabase, type Lancamento, type Status, type Conta, type Grupo, type Subgrupo, type Beneficiario } from '../lib/supabase';
@@ -32,7 +32,9 @@ export function CampoBeneficiario({ cad, valor, aoMudar, obrigatorio, placeholde
 }
 
 /* ---------------- Transferência entre contas ---------------- */
-export function ModalTransferencia({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad; hoje: string; aoFechar: () => void; aoSalvar: () => void }) {
+export function ModalTransferencia({ cad, hoje, aoFechar, aoSalvar, aoGravar }: { cad: Cad; hoje: string; aoFechar: () => void; aoSalvar: () => void; aoGravar?: () => void }) {
+  const continuar = useRef(false);
+  const [ok, setOk] = useState('');
   const [f, setF] = usePersistente('lote:transf', { origem: '', destino: '', data: hoje, valor: '', status: 'pago' as Status, obs: '' });
   const [erro, setErro] = useState('');
   const ativas = cad.contas.filter(c => c.ativa);
@@ -48,7 +50,11 @@ export function ModalTransferencia({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad
       { ...base, tipo: 'entrada', conta_id: Number(f.destino), favorecido: 'Transferência de ' + nome(f.origem) },
     ]);
     if (error) { setErro(error.message); return; }
-    aoSalvar();
+    if (continuar.current && aoGravar) {
+      continuar.current = false;
+      setOk(`Transferência de ${brl(valor)} de ${nome(f.origem)} para ${nome(f.destino)} registrada. Pode lançar a próxima.`);
+      setF({ ...f, valor: '', obs: '' }); aoGravar();
+    } else aoSalvar();
   }
   return (
     <Modal titulo="Transferência entre contas" aoFechar={aoFechar}>
@@ -61,7 +67,10 @@ export function ModalTransferencia({ cad, hoje, aoFechar, aoSalvar }: { cad: Cad
         <label>Observação<input value={f.obs} onChange={e => setF({ ...f, obs: e.target.value })} placeholder="Ex.: aplicação, resgate" /></label>
         <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Gera uma saída na conta de origem e uma entrada na de destino, ligadas entre si. Fica fora do resultado (DRE), como movimentação entre contas.</p>
         {erro && <div className="err full">{erro}</div>}
-        <div className="actions full"><button type="button" className="btn ghost" onClick={aoFechar}>Cancelar</button><button className="btn">Transferir</button></div>
+        {ok && <div className="ok full">{ok}</div>}
+        <div className="actions full"><button type="button" className="btn ghost" onClick={aoFechar}>Fechar</button>
+          {aoGravar && <button className="btn ghost" onClick={() => { continuar.current = true; }}>Transferir e lançar outra</button>}
+          <button className="btn" onClick={() => { continuar.current = false; }}>Transferir</button></div>
       </form>
     </Modal>
   );

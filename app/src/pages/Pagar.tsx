@@ -111,7 +111,7 @@ export default function Pagar() {
       {acao === 'excluir' && <ModalExcluirContas itens={marcados} aoFechar={() => setAcao('')} aoConcluir={(m, f) => { setAcao(''); setSel(new Set()); avisar(m); if (f.length) setErroLista('Não excluídas: ' + f.join(' · ')); setVersao(v => v + 1); }} />}
       {acao === 'baixar' && <ModalBaixarVarias itens={marcados} contas={contas} hoje={hoje} aoFechar={() => setAcao('')} aoConcluir={async (ids, m) => { setAcao(''); setSel(new Set()); avisar(m); setVersao(v => v + 1); const p = (await pendenciasDeLote(ids)).filter(temOQueReunir); if (p.length) setLotesDia(p); }} />}
       {lotesDia && <ConfirmarLotes pendentes={lotesDia} cad={{ contas, grupos, subgrupos }} aoConcluir={m => { setLotesDia(null); if (m) { setAviso(m); setTimeout(() => setAviso(''), 6000); } }} />}
-      {lote && <ModalLancarContas tipo="saida" cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLote(false)} aoSalvar={m => { setLote(false); setAviso(m); setTimeout(() => setAviso(''), 6000); setVersao(v => v + 1); }} />}
+      {lote && <ModalLancarContas tipo="saida" cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLote(false)} aoSalvar={m => { setLote(false); setAviso(m); setTimeout(() => setAviso(''), 6000); setVersao(v => v + 1); }} aoGravar={() => setVersao(v => v + 1)} />}
       <div className="grid g4">
         <div className="card kpi"><div className="lbl">Vencidas</div><div className="val neg">{brl(soma(vencidas))}</div><div className="sub">{vencidas.length} itens</div></div>
         <div className="card kpi"><div className="lbl">Vencem hoje</div><div className="val">{brl(soma(hojeL))}</div><div className="sub">{hojeL.length} itens</div></div>

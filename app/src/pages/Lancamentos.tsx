@@ -12,6 +12,7 @@ import { EditorRateio, HistoricoPagamentos, linhaVazia, somaRateio } from '../co
 import { DetalheLote } from '../components/Recebimentos';
 import { ModalEditarLote } from '../components/EditarLote';
 import { CampoBeneficiario } from '../components/LoteLancamentos';
+import ReclassificarSemelhantes, { buscarSemelhantes, type PedidoReclass } from '../components/ReclassificarSemelhantes';
 import ConfirmarLotes from '../components/ConfirmarLotes';
 import PrevistasVencidas from '../components/PrevistasVencidas';
 import { pendenciasDeLote, recalcularLote, temOQueReunir, type Candidato } from '../lib/lotes';
@@ -41,11 +42,13 @@ export default function Lancamentos() {
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [form, setForm] = usePersistente<Form | null>('lanc:form', null);
   const [lotesDia, setLotesDia] = useState<Candidato[] | null>(null);
+  const [reclass, setReclass] = useState<PedidoReclass | null>(null);
   const [rateio, setRateio] = usePersistente<LinhaRateio[] | null>('lanc:rateio', null);
   const [comRateio, setComRateio] = useState<Set<number>>(new Set());
   const [lotes, setLotes] = useState<Map<number, number>>(new Map());   // lançamento → lote de baixa de boletos
   const [loteAberto, setLoteAberto] = useState<number | null>(null);
   const fechar = () => { setForm(null); setRateio(null); };
+  const continuar = useRef(false);
   const [baixa, setBaixa] = useState<{ data: string; conta: string } | null>(null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
@@ -71,8 +74,8 @@ export default function Lancamentos() {
   const voltar = useRef<string | null>(null);
   const navegar = useNavigate();
   useEffect(() => {
-    if (voltar.current && !form && !lotesDia) { const v = voltar.current; voltar.current = null; navegar(v); }
-  }, [form, lotesDia]);
+    if (voltar.current && !form && !lotesDia && !reclass) { const v = voltar.current; voltar.current = null; navegar(v); }
+  }, [form, lotesDia, reclass]);
   const avisar = (t: string) => { setAviso(t); setTimeout(() => setAviso(''), 3500); };
 
   useEffect(() => {
@@ -183,9 +186,21 @@ export default function Lancamentos() {
     invalidarDicionario();
     const antes = form.id ? lista.find(x => x.id === form.id)?.status : null;
     if (dados.status === 'pago' && antes !== 'pago' && !form.fatura_id) await perguntarLotes([(res.data as Lancamento).id]);
-    fechar(); setVersao(v => v + 1);
+    if (!form.fatura_id) await perguntarSemelhantes(res.data as Lancamento);
+    if (continuar.current && !form.id) {
+      // Salvar e lançar outro: mantém tipo, conta, data, status e classificação
+      continuar.current = false;
+      setForm({ tipo: form.tipo, conta_id: form.conta_id, vencimento: form.vencimento, status: form.status, data_pagamento: form.data_pagamento, forma_pagamento: form.forma_pagamento,
+        grupo_id: form.grupo_id, subgrupo_id: form.subgrupo_id, centro_custo_id: form.centro_custo_id, favorecido: '', valor: undefined });
+      setBuscaBenef(''); setRateio(null); avisar('Lançamento salvo. Pode lançar o próximo.');
+    } else fechar();
+    setVersao(v => v + 1);
   }
 
+  /** Classificação nova para um fornecedor/cliente: oferece levar aos lançamentos anteriores semelhantes */
+  async function perguntarSemelhantes(l: Lancamento) {
+    try { const p = await buscarSemelhantes(l, id => nome(grupos, id)); if (p) setReclass(p); } catch { /* sugestão opcional */ }
+  }
   /** Baixas do mesmo dia, conta e classificação: oferece reunir no lote do dia */
   async function perguntarLotes(ids: number[]) {
     const p = (await pendenciasDeLote(ids)).filter(temOQueReunir);
@@ -416,13 +431,16 @@ export default function Lancamentos() {
                 <CampoBeneficiario key={'cli-' + (form.id ?? 'novo') + '-' + (beneficiarios.length ? 1 : 0)} cad={{ beneficiarios }} valor={form.cliente_id ?? null} placeholder="Cliente para quem a despesa foi feita: nome ou CPF/CNPJ" aoMudar={b => setForm(x => x && ({ ...x, cliente_id: b?.id ?? null }))} /></label>}
               <label className="full">Observação<input value={form.observacao ?? ''} onChange={e => setForm({ ...form, observacao: e.target.value })} /></label>
               {erro && <div className="err full">{erro}</div>}
+              {aviso && !form.id && <div className="ok full">{aviso}</div>}
               <div className="actions full">
                 {form.id && <button type="button" className="btn ghost" style={{ marginRight: baixadoForm ? 0 : 'auto', color: 'var(--neg)' }} onClick={excluir}>Excluir</button>}
                 {baixadoForm && (!confirmaDesfazer
                   ? <button type="button" className="btn ghost" style={{ marginRight: 'auto' }} title="Volta a ficar em aberto, sem excluir a conta" onClick={() => setConfirmaDesfazer(true)}>{form.titulo_id ? 'Estornar este pagamento' : 'Desfazer baixa'}</button>
                   : <span style={{ marginRight: 'auto', display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5 }}>{form.titulo_id ? 'O valor volta ao saldo da conta.' : 'A conta volta a ficar em aberto.'}{form.ofx_fitid ? ' A conciliação com o extrato também é desfeita.' : ''}
                     <button type="button" className="btn mini" onClick={desfazerForm}>Confirmar</button><button type="button" className="btn ghost mini" onClick={() => setConfirmaDesfazer(false)}>Não</button></span>)}
-                <button type="button" className="btn ghost" onClick={() => fechar()}>Cancelar</button><button className="btn">Salvar</button>
+                <button type="button" className="btn ghost" onClick={() => fechar()}>{form.id ? 'Cancelar' : 'Fechar'}</button>
+                {!form.id && <button className="btn ghost" onClick={() => { continuar.current = true; }} title="Grava e abre outro em branco, com a mesma data, conta e classificação">Salvar e lançar outro</button>}
+                <button className="btn" onClick={() => { continuar.current = false; }}>Salvar</button>
               </div>
             </form>
           </div>
@@ -436,6 +454,7 @@ export default function Lancamentos() {
           <div className="actions"><button className="btn ghost" onClick={() => setModal(null)}>Cancelar</button><button className="btn" onClick={desfazerSelecionados}>Desfazer baixa</button></div>
         </div></div>
       )}
+      {reclass && <ReclassificarSemelhantes pedido={reclass} nomeGrupo={id => nome(grupos, id)} nomeSub={id => nome(todosSub, id)} aoFechar={n => { setReclass(null); if (n) { avisar(`${n} lançamento(s) reclassificado(s).`); setVersao(v => v + 1); } }} />}
       {lotesDia && <ConfirmarLotes pendentes={lotesDia} cad={{ contas, grupos, subgrupos: todosSub }} aoConcluir={() => { setLotesDia(null); setVersao(v => v + 1); }} />}
       {loteAberto != null && <ModalEditarLote loteId={loteAberto} cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLoteAberto(null)}
         aoSalvar={m => { setLoteAberto(null); avisar(m); setVersao(v => v + 1); }} />}
@@ -457,7 +476,7 @@ export default function Lancamentos() {
           </div>
         </div>
       )}
-      {modal === 'transf' && <ModalTransferencia cad={{ contas, grupos, subgrupos, beneficiarios }} hoje={hoje} aoFechar={() => setModal(null)} aoSalvar={() => { setModal(null); avisar('Transferência registrada'); setVersao(v => v + 1); }} />}
+      {modal === 'transf' && <ModalTransferencia cad={{ contas, grupos, subgrupos, beneficiarios }} hoje={hoje} aoFechar={() => setModal(null)} aoSalvar={() => { setModal(null); avisar('Transferência registrada'); setVersao(v => v + 1); }} aoGravar={() => setVersao(v => v + 1)} />}
       {modal === 'repet' && <ModalRepeticao cad={{ contas, grupos, subgrupos, beneficiarios }} hoje={hoje} aoFechar={() => setModal(null)} aoSalvar={n => { setModal(null); avisar(n + ' previsões criadas'); setVersao(v => v + 1); }} />}
       {modal === 'copiar' && <ModalCopiar itens={lista.filter(l => sel.has(l.id))} cad={{ contas, grupos, subgrupos, beneficiarios }} aoFechar={() => setModal(null)} aoSalvar={n => { setModal(null); avisar(n + ' previsões criadas nos meses seguintes'); setVersao(v => v + 1); }} />}
       {modal === 'alterar' && <ModalAlterarLote itens={lista.filter(l => sel.has(l.id))} cad={{ contas, grupos, subgrupos, beneficiarios }} hoje={hoje} aoFechar={() => setModal(null)} aoSalvar={n => { setModal(null); avisar(n + ' lançamento(s) alterado(s)'); setVersao(v => v + 1); }} />}

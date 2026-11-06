@@ -15,7 +15,7 @@ const ESPECIAIS = ['Transferências', 'Pagamento de fatura'];
 const nova = (venc: string): LinhaC => ({ parte: '', venc, valor: '', ref: '', doc: '', grupo: '', sub: '' });
 
 /** Lançamento de várias contas a pagar ou a receber de uma vez, com classificação comum e sugestão pelo histórico */
-export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar }: { tipo: 'entrada' | 'saida'; cad: Cad; aoFechar: () => void; aoSalvar: (m: string) => void }) {
+export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar, aoGravar }: { tipo: 'entrada' | 'saida'; cad: Cad; aoFechar: () => void; aoSalvar: (m: string) => void; aoGravar?: (m: string) => void }) {
   const receber = tipo === 'entrada';
   const honor = cad.grupos.find(g => g.nome === 'Honorários'), mens = cad.subgrupos.find(s => s.grupo_id === honor?.id && s.nome === 'Mensalidade');
   const chave = 'lote-contas:' + tipo;
@@ -26,6 +26,7 @@ export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar }: { tipo: 'en
   const [dic, setDic] = useState<Awaited<ReturnType<typeof carregarDicionario>>>([]);
   const [erro, setErro] = useState('');
   const [proc, setProc] = useState(false);
+  const [ok, setOk] = useState('');
   useEffect(() => { carregarDicionario().then(setDic); }, []);
 
   const benef = (t: string) => cad.beneficiarios.find(b => rotuloB(b) === t || b.nome === t);
@@ -49,7 +50,7 @@ export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar }: { tipo: 'en
   const total = preenchidas.reduce((a, l) => a + Number(l.valor), 0);
   const fechar = () => { limparRascunhos(chave); aoFechar(); };
 
-  async function salvar() {
+  async function salvar(continuar = false) {
     setErro('');
     if (!preenchidas.length) { setErro('Preencha ao menos uma linha com valor.'); return; }
     const regs = [];
@@ -73,7 +74,11 @@ export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar }: { tipo: 'en
     setProc(false);
     if (error) { setErro(error.message); return; }
     invalidarDicionario(); limparRascunhos(chave);
-    aoSalvar(`${regs.length} conta(s) a ${receber ? 'receber' : 'pagar'} lançada(s), total de ${brl(total)}.`);
+    const m = `${regs.length} conta(s) a ${receber ? 'receber' : 'pagar'} lançada(s), total de ${brl(total)}.`;
+    if (continuar && aoGravar) {
+      // grade nova em branco, mantendo conta, status, forma e classificação padrão
+      setF({ ...f, linhas: Array.from({ length: 10 }, () => nova(f.linhas[0]?.venc || hojeISO())) }); setOk(m + ' Grade pronta para o próximo lote.'); aoGravar(m);
+    } else aoSalvar(m);
   }
 
   return (
@@ -116,7 +121,10 @@ export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar }: { tipo: 'en
         </div>
         <p style={{ fontSize: 12, color: 'var(--muted)', margin: '6px 0 0' }}>Linhas sem valor são ignoradas. Nomes não cadastrados entram só com o nome{receber ? '' : ' (a partir de 01/01/2027, pagamentos exigem fornecedor cadastrado)'}. Ao escolher o {receber ? 'cliente' : 'fornecedor'}, o app sugere o grupo usado nos lançamentos anteriores quando ele é diferente do padrão.</p>
         {erro && <div className="err mt">{erro}</div>}
-        <div className="actions"><button className="btn ghost" onClick={fechar}>Cancelar</button><button className="btn" disabled={proc} onClick={salvar}>{proc ? 'Gravando…' : `Lançar ${preenchidas.length || ''} conta(s)`}</button></div>
+        {ok && <div className="ok mt">{ok}</div>}
+        <div className="actions"><button className="btn ghost" onClick={fechar}>Fechar</button>
+          {aoGravar && <button className="btn ghost" disabled={proc} onClick={() => salvar(true)}>Lançar e abrir outro lote</button>}
+          <button className="btn" disabled={proc} onClick={() => salvar()}>{proc ? 'Gravando…' : `Lançar ${preenchidas.length || ''} conta(s)`}</button></div>
       </div>
     </div>
   );
