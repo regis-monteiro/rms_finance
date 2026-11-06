@@ -126,8 +126,6 @@ export default function Evolucao({ conta, centro }: { conta: number | null; cent
   const opcoes = [
     { g: 'Linhas do DRE', o: [['R', 'Resultado líquido'], ...linhas.filter(l => l.no_resultado).map(l => ['L:' + l.id, l.nome])] },
     { g: 'Grupos', o: grupos.filter(g => g.natureza !== 'movimentacao' && g.ativo).map(g => ['G:' + g.id, g.nome]) },
-    // custos e despesas só por grupo; subgrupos apenas nas receitas
-    { g: 'Subgrupos de receita', o: todosSub.filter(s => s.ativo !== false && grupos.find(g => g.id === s.grupo_id)?.natureza === 'receita').map(s => ['S:' + s.id, `${grupos.find(g => g.id === s.grupo_id)?.nome || ''} · ${s.nome}`]).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')) },
   ];
   const fmtPct = (v: number | null) => (v == null || !isFinite(v) ? '·' : pct(v));
   const fmtBrl = (v: number | null) => (v == null ? '·' : brl(v));
@@ -165,7 +163,7 @@ export default function Evolucao({ conta, centro }: { conta: number | null; cent
           {itens.map((k, i) => <span key={k} className="tag" style={{ background: CORES[i % CORES.length], color: '#fff', padding: '4px 8px', display: 'inline-flex', gap: 6, alignItems: 'center' }}>{nomeItem(k)}
             <button onClick={() => setItens(itens.filter(x => x !== k))} style={{ background: 'none', border: 0, color: '#fff', cursor: 'pointer', padding: 0, fontSize: 14 }} title="Remover">×</button></span>)}
           {itens.length < CORES.length ? <select value="" onChange={e => e.target.value && !itens.includes(e.target.value) && setItens([...itens, e.target.value])} style={{ maxWidth: 320 }}>
-            <option value="">+ Adicionar linha do DRE, grupo ou subgrupo</option>
+            <option value="">+ Adicionar linha do DRE ou grupo</option>
             {opcoes.map(o => <optgroup key={o.g} label={o.g}>{o.o.filter(([k]) => !itens.includes(k)).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</optgroup>)}
           </select> : <span style={{ fontSize: 12, color: 'var(--muted)' }}>Máximo de {CORES.length} itens</span>}
         </div>
