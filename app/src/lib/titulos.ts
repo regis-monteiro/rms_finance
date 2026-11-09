@@ -81,12 +81,12 @@ async function removerDoLote(lancamentoId: number) {
   const { data: it } = await supabase.from('lotes_recebimento_itens').select('id,lote_id').eq('lancamento_id', lancamentoId);
   for (const x of (it as { id: number; lote_id: number }[]) || []) {
     await supabase.from('lotes_recebimento_itens').delete().eq('id', x.id);
-    const { data: lote } = await supabase.from('lotes_recebimento').select('lanc_tarifa_id,lanc_desconto_id').eq('id', x.lote_id).single();
+    const { data: lote } = await supabase.from('lotes_recebimento').select('*').eq('id', x.lote_id).single();
     const { count } = await supabase.from('lotes_recebimento_itens').select('id', { count: 'exact', head: true }).eq('lote_id', x.lote_id);
-    const lt = lote as { lanc_tarifa_id: number | null; lanc_desconto_id: number | null } | null;
+    const lt = lote as { lanc_tarifa_id: number | null; lanc_desconto_id: number | null; lanc_juros_id?: number | null } | null;
     if (!lt) continue;
     if (!count) {
-      for (const id of [lt.lanc_tarifa_id, lt.lanc_desconto_id]) if (id) await supabase.from('lancamentos').delete().eq('id', id);
+      for (const id of [lt.lanc_tarifa_id, lt.lanc_desconto_id, lt.lanc_juros_id]) if (id) await supabase.from('lancamentos').delete().eq('id', id);
       await supabase.from('lotes_recebimento').delete().eq('id', x.lote_id);
     } else await recalcularLote(x.lote_id);
   }
@@ -103,6 +103,7 @@ export async function desfazerBaixa(l: Lancamento): Promise<string | null> {
     const { data: t } = await supabase.from('lancamentos').select('*').eq('id', l.titulo_id).single();
     if (!t) return 'Conta original não encontrada.';
     if (l.desconto_lanc_id) await supabase.from('lancamentos').delete().eq('id', l.desconto_lanc_id);
+    if (l.juros_lanc_id) await supabase.from('lancamentos').delete().eq('id', l.juros_lanc_id);
     const e = await estornarPagamento(t as Lancamento, l);
     if (!e) await removerDoLote(l.id);
     return e;
@@ -116,9 +117,10 @@ export async function desfazerBaixa(l: Lancamento): Promise<string | null> {
   if (r.error) return r.error.message;
   await removerDoLote(l.id);
   if (l.juros_lanc_id) {
-    await supabase.from('lancamentos').update({ juros_lanc_id: null }).eq('id', l.id);
+    await supabase.from('lancamentos').update({ juros_lanc_id: null, juros_multa: 0 }).eq('id', l.id);
     await supabase.from('lancamentos').delete().eq('id', l.juros_lanc_id);
   }
+  if (!l.juros_lanc_id && Number(l.juros_multa || 0)) await supabase.from('lancamentos').update({ juros_multa: 0 }).eq('id', l.id);
   if (l.desconto_lanc_id || Number(l.desconto || 0)) {
     await supabase.from('lancamentos').update({ desconto_lanc_id: null, desconto: 0 }).eq('id', l.id);
     if (l.desconto_lanc_id) await supabase.from('lancamentos').delete().eq('id', l.desconto_lanc_id);

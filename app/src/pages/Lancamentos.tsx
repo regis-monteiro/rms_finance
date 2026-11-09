@@ -18,7 +18,7 @@ import ReclassificarSemelhantes, { buscarSemelhantes, type PedidoReclass } from 
 import ConfirmarLotes from '../components/ConfirmarLotes';
 import PrevistasVencidas from '../components/PrevistasVencidas';
 import { pendenciasDeLote, recalcularLote, temOQueReunir, type Candidato } from '../lib/lotes';
-import { sincronizarDesconto } from '../lib/descontos';
+import { sincronizarDesconto, sincronizarJuros as sincronizarJurosBaixa } from '../lib/descontos';
 import { anterior, carregarRateio, desfazerBaixa, gravarRateio, type LinhaRateio } from '../lib/titulos';
 import { Cabecalho } from '../components/Layout';
 import { FormBeneficiario } from '../components/Beneficiarios';
@@ -209,27 +209,14 @@ export default function Lancamentos() {
     if (p.length) setLotesDia(p);
   }
 
-  /** Multa/juros: lançamento separado em Despesas financeiras (pagamento) ou Receitas financeiras (recebimento) */
+  /** Multa/juros: lançamento separado em Despesas financeiras (pagamento) ou Receitas financeiras (recebimento); em lote, entra na soma do lote */
   async function sincronizarJuros(l: Lancamento): Promise<string | null> {
-    const juros = Number(l.juros_multa || 0);
-    if (l.status === 'pago' && juros > 0) {
-      const g = todosGrupos.find(x => x.nome === (l.tipo === 'saida' ? 'Despesas financeiras' : 'Receitas financeiras'));
-      if (!g) return 'rode o arquivo 007_multa_juros.sql no Supabase';
-      const sg = subgrupos.find(x => x.grupo_id === g.id && x.nome === 'Multa/juros por atraso');
-      const dados = { tipo: l.tipo, conta_id: l.conta_id, vencimento: l.data_pagamento, data_pagamento: l.data_pagamento, grupo_id: g.id, subgrupo_id: sg?.id ?? null,
-        favorecido: l.favorecido, beneficiario_id: l.beneficiario_id, referencia: 'Multa/juros: ' + (l.referencia || dataBR(l.vencimento)), valor: juros, status: 'pago', observacao: 'multa/juros por atraso' };
-      if (l.juros_lanc_id) { const r = await supabase.from('lancamentos').update(dados).eq('id', l.juros_lanc_id); return r.error?.message ?? null; }
-      const r = await supabase.from('lancamentos').insert(dados).select('id').single();
-      if (r.error) return r.error.message;
-      const u = await supabase.from('lancamentos').update({ juros_lanc_id: r.data.id }).eq('id', l.id);
-      return u.error?.message ?? null;
+    const loteId = lotes.get(l.id);
+    if (loteId != null) {
+      await supabase.from('lotes_recebimento_itens').update({ juros: l.status === 'pago' ? Number(l.juros_multa || 0) : 0 }).eq('lancamento_id', l.id);
+      try { await recalcularLote(loteId); return null; } catch (e) { return (e as Error).message; }
     }
-    if (l.juros_lanc_id) {
-      await supabase.from('lancamentos').update({ juros_lanc_id: null }).eq('id', l.id);
-      const r = await supabase.from('lancamentos').delete().eq('id', l.juros_lanc_id);
-      return r.error?.message ?? null;
-    }
-    return null;
+    return sincronizarJurosBaixa(l, Number(l.juros_multa || 0));
   }
 
   async function confirmarBaixa(e: React.FormEvent) {

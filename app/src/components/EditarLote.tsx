@@ -10,12 +10,14 @@ import { formatarDocumento } from '../lib/documento';
 import { estornarPagamento, registrarPagamento } from '../lib/titulos';
 import { invalidarDicionario } from '../lib/sugestao';
 import { recalcularLote } from '../lib/lotes';
+import { interpretarBaixa } from '../lib/descontos';
+import Diferenca from './Diferenca';
 import { CamposTarifa, lancarTarifa, type Cad, type Tarifa } from './Recebimentos';
 
-interface Lote { lanc_desconto_id?: number | null; id: number; tipo: 'baixa' | 'consolidado'; natureza?: 'entrada' | 'saida'; grupo_id?: number | null; subgrupo_id?: number | null; data: string; conta_id: number; quantidade: number; tarifa_unitaria: number; total: number; lanc_consolidado_id: number | null; lanc_tarifa_id: number | null }
-interface Item { id?: number; beneficiario_id: number | null; nome: string | null; valor: number; desconto?: number | null; lancamento_id: number | null }
+interface Lote { lanc_desconto_id?: number | null; lanc_juros_id?: number | null; id: number; tipo: 'baixa' | 'consolidado'; natureza?: 'entrada' | 'saida'; grupo_id?: number | null; subgrupo_id?: number | null; data: string; conta_id: number; quantidade: number; tarifa_unitaria: number; total: number; lanc_consolidado_id: number | null; lanc_tarifa_id: number | null }
+interface Item { id?: number; beneficiario_id: number | null; nome: string | null; valor: number; desconto?: number | null; juros?: number | null; lancamento_id: number | null }
 /** Linha em edição: "orig" guarda o item como estava, para saber o que mudou */
-interface Ed { chave: string; cliente: string; valor: string; desconto?: string; lanc?: Lancamento; orig?: Item; novoTitulo?: Lancamento }
+interface Ed { chave: string; cliente: string; valor: string; desconto?: string; parcial?: boolean; lanc?: Lancamento; orig?: Item; novoTitulo?: Lancamento }
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const rotuloB = (b?: Beneficiario) => (b ? `${b.nome} · ${formatarDocumento(b.documento)}` : '');
 const agora = () => new Date().toISOString();
@@ -42,7 +44,7 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
       const { data: ls } = ids.length ? await supabase.from('lancamentos').select('*').in('id', ids) : { data: [] };
       const tarifa = lt.lanc_tarifa_id ? (await supabase.from('lancamentos').select('beneficiario_id').eq('id', lt.lanc_tarifa_id).single()).data as { beneficiario_id: number | null } | null : null;
       setF({ data: lt.data, conta: String(lt.conta_id), tarifa: { houve: Number(lt.tarifa_unitaria) > 0, unit: Number(lt.tarifa_unitaria) > 0 ? String(lt.tarifa_unitaria) : '', benef: tarifa?.beneficiario_id ? String(tarifa.beneficiario_id) : '' } });
-      setLinhas(itens.map((x, i) => ({ chave: 'o' + i, cliente: rotuloB(cad.beneficiarios.find(b => b.id === x.beneficiario_id)) || x.nome || '', valor: String(r2(Number(x.valor) - Number(x.desconto || 0))), desconto: Number(x.desconto || 0) ? String(x.desconto) : '', orig: x,
+      setLinhas(itens.map((x, i) => ({ chave: 'o' + i, cliente: rotuloB(cad.beneficiarios.find(b => b.id === x.beneficiario_id)) || x.nome || '', valor: String(r2(Number(x.valor) - Number(x.desconto || 0) + Number(x.juros || 0))), orig: x,
         lanc: ((ls as Lancamento[]) || []).find(y => y.id === x.lancamento_id) })));
       if (lt.tipo === 'baixa') {
         // contas em aberto da mesma natureza (e da mesma classificação, quando o lote é do dia)
@@ -94,8 +96,10 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
         // tira os itens do lote antes de refazer as baixas, para o lote não ser desfeito no meio da alteração
         await supabase.from('lotes_recebimento_itens').delete().eq('lote_id', lote.id);
         for (const l of linhas) {
-          const liq = r2(Number(l.valor || 0)), d = liq > 0 ? r2(Number(l.desconto || 0)) : 0, v = r2(liq + d);
-          if (d < 0) throw new Error(`${(l.lanc || l.novoTitulo)?.favorecido}: o desconto não pode ser negativo.`);
+          // valor efetivo: menor que a conta = desconto (ou parcial, se marcado); maior = multa/juros
+          const liq = r2(Number(l.valor || 0)), base = l.lanc ? Number(l.lanc.valor) : Number(l.novoTitulo?.valor || 0);
+          const ix = liq > 0 ? interpretarBaixa(base, liq, !!l.parcial) : null;
+          const d = ix && !('erro' in ix) ? ix.desconto : 0, j = ix && !('erro' in ix) ? ix.juros : 0, v = ix && !('erro' in ix) ? ix.bruto : 0;
           if (l.lanc) {
             const mudouValor = !(v > 0) || Math.abs(v - Number(l.lanc.valor)) >= 0.005;
             if (mudouValor) {
@@ -105,22 +109,22 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
                 if (d > 0 && Math.abs(v - Number((t as Lancamento).valor)) >= 0.005) throw new Error(`${l.lanc.favorecido}: com desconto a conta é quitada, valor + desconto deve somar ${brl((t as Lancamento).valor)}.`);
                 const r = await registrarPagamento(t as Lancamento, v, f.data, conta);
                 if (r.erro) throw new Error(`${l.lanc.favorecido}: ${r.erro}`);
-                if (r.id) await supabase.from('lancamentos').update({ desconto: d }).eq('id', r.id);
-                novos.push({ beneficiario_id: l.lanc.beneficiario_id, nome: l.lanc.favorecido, valor: v, desconto: d, lancamento_id: r.id });
+                if (r.id) await supabase.from('lancamentos').update({ desconto: d, juros_multa: j }).eq('id', r.id);
+                novos.push({ beneficiario_id: l.lanc.beneficiario_id, nome: l.lanc.favorecido, valor: v, desconto: d, ...(j ? { juros: j } : {}), lancamento_id: r.id });
               }
             } else {
-              if (l.lanc.data_pagamento !== f.data || l.lanc.conta_id !== conta || Number(l.lanc.desconto || 0) !== d) {
-                const r = await supabase.from('lancamentos').update({ data_pagamento: f.data, conta_id: conta, desconto: d, atualizado_em: agora() }).eq('id', l.lanc.id);
+              if (l.lanc.data_pagamento !== f.data || l.lanc.conta_id !== conta || Number(l.lanc.desconto || 0) !== d || Number(l.lanc.juros_multa || 0) !== j) {
+                const r = await supabase.from('lancamentos').update({ data_pagamento: f.data, conta_id: conta, desconto: d, juros_multa: j, atualizado_em: agora() }).eq('id', l.lanc.id);
                 if (r.error) throw new Error(r.error.message);
               }
-              novos.push({ beneficiario_id: l.lanc.beneficiario_id, nome: l.lanc.favorecido, valor: v, desconto: d, lancamento_id: l.lanc.id });
+              novos.push({ beneficiario_id: l.lanc.beneficiario_id, nome: l.lanc.favorecido, valor: v, desconto: d, ...(j ? { juros: j } : {}), lancamento_id: l.lanc.id });
             }
           } else if (l.novoTitulo && liq > 0) {
             if (d > 0 && Math.abs(v - Number(l.novoTitulo.valor)) >= 0.005) throw new Error(`${l.novoTitulo.favorecido}: com desconto a conta é quitada, valor + desconto deve somar ${brl(l.novoTitulo.valor)}.`);
             const r = await registrarPagamento(l.novoTitulo, v, f.data, conta);
             if (r.erro) throw new Error(`${l.novoTitulo.favorecido}: ${r.erro}`);
-            if (r.id && d > 0) await supabase.from('lancamentos').update({ desconto: d }).eq('id', r.id);
-            novos.push({ beneficiario_id: l.novoTitulo.beneficiario_id, nome: l.novoTitulo.favorecido, valor: v, desconto: d, lancamento_id: r.id });
+            if (r.id && (d > 0 || j > 0)) await supabase.from('lancamentos').update({ desconto: d, juros_multa: j }).eq('id', r.id);
+            novos.push({ beneficiario_id: l.novoTitulo.beneficiario_id, nome: l.novoTitulo.favorecido, valor: v, desconto: d, ...(j ? { juros: j } : {}), lancamento_id: r.id });
           }
         }
       }
@@ -135,7 +139,8 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
         } else idTarifa = await lancarTarifa(cad, n, unit, f.data, conta, b?.id ?? null);
       } else if (idTarifa) { await supabase.from('lancamentos').delete().eq('id', idTarifa); idTarifa = null; }
       await supabase.from('lotes_recebimento_itens').delete().eq('lote_id', lote.id);
-      const ri = await supabase.from('lotes_recebimento_itens').insert(novos.map(x => ({ ...x, lote_id: lote.id })));
+      const comJuros = novos.some(x => Number(x.juros || 0) > 0);
+      const ri = await supabase.from('lotes_recebimento_itens').insert(novos.map(x => ({ ...x, ...(comJuros ? { juros: Number(x.juros || 0) } : {}), lote_id: lote.id })));
       if (ri.error) throw new Error(ri.error.message);
       const u = await supabase.from('lotes_recebimento').update({ data: f.data, conta_id: conta, quantidade: novos.length, tarifa_unitaria: ent && f.tarifa.houve ? unit : 0, total: r2(novos.reduce((a, x) => a + x.valor, 0)), lanc_tarifa_id: idTarifa }).eq('id', lote.id);
       if (u.error) throw new Error(u.error.message);
@@ -153,6 +158,7 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
       if (lote.tipo === 'baixa') for (const l of linhas) if (l.lanc) await estornar(l.lanc);
       if (lote.lanc_tarifa_id) await supabase.from('lancamentos').delete().eq('id', lote.lanc_tarifa_id);
       if (lote.lanc_desconto_id) await supabase.from('lancamentos').delete().eq('id', lote.lanc_desconto_id);
+      if (lote.lanc_juros_id) await supabase.from('lancamentos').delete().eq('id', lote.lanc_juros_id);
       await supabase.from('lotes_recebimento').delete().eq('id', lote.id);
       aoSalvar(lote.tipo === 'baixa' ? (ent ? 'Baixa do lote desfeita: os itens voltaram a ficar em aberto e a tarifa foi removida.' : 'Baixa do lote desfeita: as contas voltaram a ficar em aberto.') : 'Lote excluído, com o recebimento consolidado e a tarifa.');
     } catch (e) { setErro('Exclusão interrompida: ' + (e as Error).message); }
@@ -173,15 +179,15 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
         <OpcoesCadastro id="editar-lote-clientes" lista={cad.beneficiarios} />
         <div style={{ maxHeight: '38vh', overflow: 'auto', marginTop: 10 }}>
           <table className="compacta lote-contas">
-            <thead><tr><th>#</th><th>{ent ? 'Cliente / Origem' : 'Fornecedor / Beneficiário'}</th>{baixa && <th>Vencimento</th>}{baixa && <th className="r">Desconto</th>}<th className="r">{ent ? 'Valor recebido' : 'Valor pago'}</th><th /></tr></thead>
+            <thead><tr><th>#</th><th>{ent ? 'Cliente / Origem' : 'Fornecedor / Beneficiário'}</th>{baixa && <th>Vencimento</th>}<th className="r">{ent ? 'Valor recebido' : 'Valor pago'}</th>{baixa && <th>Diferença</th>}<th /></tr></thead>
             <tbody>{linhas.map((l, i) => (
               <tr key={l.chave} style={{ opacity: Number(l.valor) > 0 ? 1 : 0.45 }}>
                 <td style={{ color: 'var(--muted)' }}>{i + 1}</td>
                 <td>{baixa ? <span className={l.lanc ? 'clicavel' : ''} title={l.lanc ? 'Abrir o lançamento' : ''} onClick={() => l.lanc && nav(`/lancamentos?abrir=${l.lanc.titulo_id || l.lanc.id}`)}>{l.lanc?.favorecido || l.novoTitulo?.favorecido}</span>
                   : <input list="editar-lote-clientes" value={l.cliente} onChange={e => set(l.chave, 'cliente', e.target.value)} style={{ width: '100%' }} />}</td>
                 {baixa && <td>{dataBR((l.lanc || l.novoTitulo)?.vencimento || null)}</td>}
-                {baixa && <td className="r"><CampoValor value={l.desconto || ''} onChange={e => { const d = Number(e.target.value || 0), base = (l.lanc ? Number(l.lanc.valor) : Number(l.novoTitulo?.valor || 0)); setLinhas(linhas.map(x => (x.chave === l.chave ? { ...x, desconto: e.target.value, valor: String(r2(base - (d > 0 ? d : 0))) } : x))); }} style={{ width: 100, textAlign: 'right' }} /></td>}
                 <td className="r"><CampoValor value={l.valor} onChange={e => set(l.chave, 'valor', e.target.value)} style={{ width: 120, textAlign: 'right' }} /></td>
+                {baixa && <td>{Number(l.valor) > 0 && <Diferenca aberto={l.lanc ? Number(l.lanc.valor) : Number(l.novoTitulo?.valor || 0)} efetivo={Number(l.valor)} parcial={!!l.parcial} entrada={ent} aoParcial={p => setLinhas(linhas.map(x => (x.chave === l.chave ? { ...x, parcial: p } : x)))} />}</td>}
                 <td><button className="btn ghost mini" title={baixa ? 'Tirar do lote (a conta volta a ficar em aberto)' : 'Excluir item'} onClick={() => set(l.chave, 'valor', '')}>×</button></td>
               </tr>))}</tbody>
           </table>
@@ -196,7 +202,7 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
           </div>
         ) : <button className="btn ghost mini mt" onClick={() => setLinhas([...linhas, { chave: 'n' + Date.now(), cliente: '', valor: '' }])}>+ Item</button>}
         <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0' }}>
-          {baixa ? `Zerar o valor (ou ×) tira o item do lote e a conta volta a ficar em aberto. Valor menor que o da conta registra ${ent ? 'recebimento' : 'pagamento'} parcial.` : 'O total do lançamento consolidado é recalculado pela soma dos itens.'}{ent ? ' A tarifa é recalculada pela quantidade de itens.' : ''}
+          {baixa ? `Zerar o valor (ou ×) tira o item do lote e a conta volta a ficar em aberto. Valor menor que o da conta vira desconto (ou parcial, se marcado); maior vira multa/juros. Descontos e juros do lote entram num lançamento só cada.` : 'O total do lançamento consolidado é recalculado pela soma dos itens.'}{ent ? ' A tarifa é recalculada pela quantidade de itens.' : ''}
         </p>
         {erro && <div className="err mt">{erro}</div>}
         <div className="actions">

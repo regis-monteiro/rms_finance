@@ -10,6 +10,8 @@ import { formatarDocumento } from '../lib/documento';
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { registrarPagamento } from '../lib/titulos';
 import { invalidarDicionario } from '../lib/sugestao';
+import { interpretarBaixa } from '../lib/descontos';
+import Diferenca from './Diferenca';
 import { pendenciasDeLote, reunirNoLote, temOQueReunir, type Candidato, type TarifaLote } from '../lib/lotes';
 import ConfirmarLotes from './ConfirmarLotes';
 import { useNavigate } from 'react-router-dom';
@@ -60,7 +62,7 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
   const [busca, setBusca] = useState('');
   const [vencidas, setVencidas] = useState(true);
   const [sel, setSel] = usePersistente<number[]>('rec:sel', []);
-  const [baixa, setBaixa] = usePersistente<{ data: string; conta: string; valores: Record<number, string>; descontos?: Record<number, string>; tarifa: Tarifa } | null>('rec:baixa', null);
+  const [baixa, setBaixa] = usePersistente<{ data: string; conta: string; valores: Record<number, string>; parciais?: Record<number, boolean>; tarifa: Tarifa } | null>('rec:baixa', null);
   const [erro, setErro] = useState('');
   const [msg, setMsg] = useState('');
   const [proc, setProc] = useState(false);
@@ -91,17 +93,14 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
     setProc(true);
     try {
       const conta = Number(baixa.conta), ids: number[] = [];
-      for (const l of marcados) {
-        const d = Number(baixa.descontos?.[l.id] || 0);
-        if (d < 0) throw new Error(`${l.favorecido}: o desconto não pode ser negativo.`);
-        if (d > 0 && Math.abs(Number(baixa.valores[l.id] ?? l.valor) + d - Number(l.valor)) >= 0.005) throw new Error(`${l.favorecido}: com desconto a conta é quitada, recebido + desconto deve somar ${brl(l.valor)}.`);
-      }
-      for (const l of marcados) {
-        const v = Number(baixa.valores[l.id] ?? l.valor), d = Number(baixa.descontos?.[l.id] || 0);
-        const r = await registrarPagamento(l, r2(v + d), baixa.data, conta);
+      const plano = marcados.map(l => ({ l, x: interpretarBaixa(Number(l.valor), Number(baixa.valores[l.id] ?? l.valor), !!baixa.parciais?.[l.id]) }));
+      for (const { l, x } of plano) if ('erro' in x) throw new Error(`${l.favorecido}: ${x.erro}`);
+      for (const { l, x } of plano) {
+        if ('erro' in x) continue;
+        const r = await registrarPagamento(l, x.bruto, baixa.data, conta);
         if (r.erro) throw new Error(`${l.favorecido}: ${r.erro}`);
-        // o desconto entra no lote, que lança um único desconto concedido com a soma
-        if (d > 0 && r.id) await supabase.from('lancamentos').update({ desconto: r2(d) }).eq('id', r.id);
+        // desconto e multa/juros entram no lote, que lança um único desconto e uma única multa/juros com as somas
+        if ((x.desconto || x.juros) && r.id) await supabase.from('lancamentos').update({ desconto: x.desconto, juros_multa: x.juros }).eq('id', r.id);
         if (r.id) ids.push(r.id);
       }
       try { localStorage.setItem('rms-tarifa-boleto', JSON.stringify({ unit: baixa.tarifa.unit, benef: baixa.tarifa.benef })); } catch { /* ignora */ }
@@ -125,7 +124,8 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
     const contaPadrao = marcados.find(l => l.conta_id)?.conta_id;
     setBaixa({ data: hoje, conta: contaPadrao ? String(contaPadrao) : '', valores: {}, tarifa: { houve: !!ult.unit, unit: ult.unit || '', benef: ult.benef || '' } });
   };
-  const totalDesc = r2(marcados.reduce((a, l) => a + Number(baixa?.descontos?.[l.id] || 0), 0));
+  const difs = marcados.map(l => interpretarBaixa(Number(l.valor), Number(baixa?.valores[l.id] ?? l.valor), !!baixa?.parciais?.[l.id]));
+  const totalDesc = r2(difs.reduce((a, x) => a + ('erro' in x ? 0 : x.desconto), 0)), totalJur = r2(difs.reduce((a, x) => a + ('erro' in x ? 0 : x.juros), 0));
   const totalSel = marcados.reduce((a, l) => a + Number(baixa?.valores[l.id] ?? l.valor), 0);
 
   return (
@@ -167,13 +167,13 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
               <label className="span2">Total recebido<input disabled value={brl(totalSel)} /></label>
               <CamposTarifa t={baixa.tarifa} setT={t => setBaixa({ ...baixa, tarifa: t })} data={baixa.data} cad={cad} n={marcados.length} />
               <div className="full" style={{ maxHeight: '34vh', overflow: 'auto' }}>
-                <table className="compacta"><thead><tr><th>Cliente</th><th>Vencimento</th><th className="r">Em aberto</th><th className="r">Desconto</th><th className="r">Recebido</th></tr></thead>
+                <table className="compacta"><thead><tr><th>Cliente</th><th>Vencimento</th><th className="r">Em aberto</th><th className="r">Recebido</th><th>Diferença</th></tr></thead>
                   <tbody>{marcados.map(l => (
                     <tr key={l.id}><td>{l.favorecido}</td><td>{dataBR(l.vencimento)}</td><td className="r">{brl(l.valor)}</td>
-                      <td className="r"><CampoValor value={baixa.descontos?.[l.id] ?? ''} onChange={e => { const d = Number(e.target.value || 0); setBaixa({ ...baixa, descontos: { ...(baixa.descontos || {}), [l.id]: e.target.value }, valores: { ...baixa.valores, [l.id]: String(r2(Number(l.valor) - (d > 0 ? d : 0))) } }); }} style={{ width: 100, textAlign: 'right' }} /></td>
-                      <td className="r"><CampoValor value={baixa.valores[l.id] ?? String(l.valor)} onChange={e => setBaixa({ ...baixa, valores: { ...baixa.valores, [l.id]: e.target.value } })} style={{ width: 120, textAlign: 'right' }} /></td></tr>))}</tbody></table>
+                      <td className="r"><CampoValor value={baixa.valores[l.id] ?? String(l.valor)} onChange={e => setBaixa({ ...baixa, valores: { ...baixa.valores, [l.id]: e.target.value } })} style={{ width: 120, textAlign: 'right' }} /></td>
+                      <td><Diferenca aberto={Number(l.valor)} efetivo={Number(baixa.valores[l.id] ?? l.valor)} parcial={!!baixa.parciais?.[l.id]} entrada aoParcial={p => setBaixa({ ...baixa, parciais: { ...(baixa.parciais || {}), [l.id]: p } })} /></td></tr>))}</tbody></table>
               </div>
-              <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Valor menor que o em aberto registra recebimento parcial; a diferença continua a receber na mesma conta. Com desconto, a conta é quitada e os descontos do lote entram num lançamento só, em Despesas financeiras · Descontos concedidos.{totalDesc > 0 ? ` Descontos: ${brl(totalDesc)}.` : ''}{baixa.tarifa.houve ? ' A tarifa é lançada de forma consolidada, ligada a este lote.' : ''}</p>
+              <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Informe o valor efetivamente recebido. Menor que o em aberto vira desconto concedido e quita a conta (ou marque "parcial" para manter o saldo a receber); maior vira multa/juros recebidos. Descontos e juros do lote entram num lançamento só cada.{totalDesc > 0 ? ` Descontos: ${brl(totalDesc)}.` : ''}{totalJur > 0 ? ` Multa/juros: ${brl(totalJur)}.` : ''}{baixa.tarifa.houve ? ' A tarifa é lançada de forma consolidada, ligada a este lote.' : ''}</p>
               {erro && <div className="err full">{erro}</div>}
               <div className="actions full"><button type="button" className="btn ghost" onClick={() => setBaixa(null)}>Cancelar</button><button className="btn" disabled={proc}>{proc ? 'Gravando…' : 'Confirmar baixa'}</button></div>
             </form>
