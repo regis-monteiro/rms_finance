@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ModalMovimentacao } from '../components/MovimentacaoConta';
 import { supabase, type Lancamento } from '../lib/supabase';
 import { useAuth, podeEditar } from '../lib/auth';
-import { brl, diaMes, hojeISO, somaDias, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
+import { dataBR, brl, diaMes, hojeISO, somaDias, statusEfetivo, classeStatus, STATUS_LABEL } from '../lib/format';
 import { useCadastros } from '../lib/useCadastros';
 import { Cabecalho } from '../components/Layout';
 import { ModalEmissao } from '../components/Emissao';
@@ -30,6 +30,7 @@ export default function Dashboard() {
   const opera = podeEditar(usuario?.perfil);
   const ir = (url: string, rasc?: Record<string, unknown>) => { try { Object.entries(rasc || {}).forEach(([k, v]) => localStorage.setItem('rms-rascunho:' + k, JSON.stringify(v))); } catch { /* ignora */ } nav(url); };
   const [proj, setProj] = useState<{ conta_id: number; rendimento_pendente: number; irrf_pendente: number }[]>([]);
+  const [movMes, setMovMes] = useState<number | null>(null);
   const hoje = hojeISO(), [anoH, mesH] = hoje.split('-').map(Number), fimMes = `${hoje.slice(0, 8)}${new Date(anoH, mesH, 0).getDate()}`;
 
   useEffect(() => {
@@ -41,6 +42,16 @@ export default function Dashboard() {
     });
     if (podeEditar(usuario?.perfil)) {
       supabase.from('aplicacoes_projecao').select('*').then(({ data }) => setProj((data as typeof proj) || []));
+      // em aberto (previstos, confirmados, agendados e vencidos) até o fim do mês, para o saldo projetado
+      (async () => {
+        let t = 0;
+        for (let i = 0; ; i += 1000) {
+          const { data } = await supabase.from('lancamentos').select('tipo,valor').neq('status', 'pago').lte('vencimento', fimMes).order('id').range(i, i + 999);
+          t += ((data as { tipo: string; valor: number }[]) || []).reduce((a, l) => a + (l.tipo === 'entrada' ? 1 : -1) * Number(l.valor), 0);
+          if (!data || data.length < 1000) break;
+        }
+        setMovMes(Math.round(t * 100) / 100);
+      })();
       supabase.from('lancamentos').select('*').eq('tipo', 'saida').neq('status', 'pago').lte('vencimento', fimMes).order('vencimento')
         .then(({ data }) => setAbertos((data as Lancamento[]) || []));
       supabase.from('faturas_resumo').select('*').gte('data_vencimento', somaDias(hoje, -40)).order('data_vencimento')
@@ -49,6 +60,8 @@ export default function Dashboard() {
   }, [usuario]);
 
   const total = saldos.reduce((a, s) => a + Number(s.saldo), 0);
+  // rendimentos ainda não lançados − IRRF projetado das aplicações (sem contar duas vezes o que já foi lançado)
+  const ajusteAplic = Math.round(proj.reduce((a, p) => a + Number(p.rendimento_pendente) - Number(p.irrf_pendente), 0) * 100) / 100;
   const soma = (l: Lancamento[]) => l.reduce((a, x) => a + Number(x.valor), 0);
   const vencidos = abertos.filter(l => l.vencimento < hoje);
   const em7 = abertos.filter(l => l.vencimento >= hoje && l.vencimento <= somaDias(hoje, 7));
@@ -75,7 +88,7 @@ export default function Dashboard() {
         linhas: [...faturas.map(x => ({ c: x.cartao, d: x.data_vencimento, v: x.total - x.pago })), { c: 'Total', v: faturas.reduce((a, x) => a + x.total - x.pago, 0), _estilo: 'total' as const }] as Linha[] });
     }
     const r = { titulo: 'Dashboard financeiro', arquivo: 'dashboard', usuario: usuario?.nome || usuario?.email || '', periodo: `Posição em ${posicao}`, assinaturas,
-      resumo: [{ rotulo: 'Saldo total', valor: brl(total) }, { rotulo: `A receber em ${MESES_LONGOS[m].toLowerCase()}`, valor: brl(aReceber) }, { rotulo: `Resultado de ${m ? MESES_LONGOS[m - 1].toLowerCase() : '·'}`, valor: m ? brl(res[m - 1]) : '·' }, { rotulo: `Acumulado ${anoH}`, valor: brl(acum) }, { rotulo: 'Previsto até dezembro', valor: brl(prev.reduce((a, b) => a + b, 0)) }],
+      resumo: [{ rotulo: 'Saldo total', valor: brl(total) }, ...(movMes != null ? [{ rotulo: `Saldo projetado até ${dataBR(fimMes)}`, valor: brl(total + movMes + ajusteAplic) }] : []), { rotulo: `A receber em ${MESES_LONGOS[m].toLowerCase()}`, valor: brl(aReceber) }, { rotulo: `Resultado de ${m ? MESES_LONGOS[m - 1].toLowerCase() : '·'}`, valor: m ? brl(res[m - 1]) : '·' }, { rotulo: `Acumulado ${anoH}`, valor: brl(acum) }, { rotulo: 'Previsto até dezembro', valor: brl(prev.reduce((a, b) => a + b, 0)) }],
       secoes, observacao: 'Resultados em regime de caixa (realizado pela data de pagamento). Saldos conforme lançamentos pagos até a data de emissão.' };
     f === 'pdf' ? await gerarPDF(r) : await gerarExcel(r);
   }
@@ -86,10 +99,16 @@ export default function Dashboard() {
       {mov && <ModalMovimentacao conta={contas.find(c => c.id === mov.id) || null} contas={contas} saldoAtual={mov.id == null ? total : Number(saldos.find(x => x.id === mov.id)?.saldo || 0)} aoFechar={() => setMov(null)} />}
       {emitir && <ModalEmissao titulo="Dashboard" assinatura aoFechar={() => setEmitir(false)} aoGerar={emitirRelatorio} />}
       <div className="grid g4">
-        <div className="card kpi total clicavel" title="Ver a movimentação de todas as contas" onClick={() => opera && setMov({ id: null })}><div className="lbl">Saldo total</div><div className="val">{brl(total)}</div><div className="sub">{saldos.length} contas</div></div>
+        <div className="card kpi total clicavel" title="Ver a movimentação de todas as contas" onClick={() => opera && setMov({ id: null })}><div className="lbl">Saldo total</div><div className="val">{brl(total)}</div>
+          {movMes != null ? <div className="sub" title={`Saldo atual ${brl(total)} + entradas e − saídas em aberto até ${dataBR(fimMes)} (${brl(movMes)}), incluindo vencidos não baixados, + rendimentos ainda não lançados − IRRF projetado das aplicações (${brl(ajusteAplic)})`}>
+            Projetado até {dataBR(fimMes).slice(0, 5)}: <b>{brl(total + movMes + ajusteAplic)}</b></div> : <div className="sub">{saldos.length} contas</div>}</div>
         {saldos.map(s => (
           <div className="card kpi clicavel" key={s.id} title="Ver as últimas transações e o saldo dia a dia" onClick={() => opera && setMov({ id: s.id })}><div className="lbl">{s.nome}<span className="tag">{TIPO[s.tipo]}</span></div><div className="val">{brl(s.saldo)}</div>{(() => { const p = proj.find(x => x.conta_id === s.id); if (!p || (!Number(p.rendimento_pendente) && !Number(p.irrf_pendente))) return null;
-            return <div className="sub" title="Saldo lançado + rendimentos ainda não lançados − IRRF projetado (retido só no resgate ou vencimento)">Líquido projetado: {brl(Number(s.saldo) + Number(p.rendimento_pendente) - Number(p.irrf_pendente))}</div>; })()}</div>
+            const bruto = Number(s.saldo) + Number(p.rendimento_pendente);
+            return <>
+              <div className="sub" title="Saldo lançado + rendimentos do extrato ainda não lançados">Bruto projetado: {brl(bruto)}</div>
+              <div className="sub" style={{ marginTop: 0 }} title="Bruto projetado − IRRF que será retido no resgate ou vencimento (ainda não lançado)">Líquido projetado: {brl(bruto - Number(p.irrf_pendente))}</div>
+            </>; })()}</div>
         ))}
       </div>
 
