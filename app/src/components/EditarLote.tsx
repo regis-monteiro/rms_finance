@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { acharCadastro, casaBusca } from '../lib/documento';
+import OpcoesCadastro from './OpcoesCadastro';
 import { useNavigate } from 'react-router-dom';
 import CampoValor from './CampoValor';
 import DataBR from './DataBR';
@@ -58,7 +60,7 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
   const ent = lote?.natureza !== 'saida';
   const tarifaTotal = ent && f.tarifa.houve ? r2(n * Number(f.tarifa.unit || 0)) : 0;
   const usados = new Set(linhas.map(l => l.novoTitulo?.id).filter(Boolean));
-  const candidatos = useMemo(() => abertos.filter(a => !usados.has(a.id) && (!busca || a.favorecido.toLowerCase().includes(busca.toLowerCase()))).slice(0, 30), [abertos, busca, linhas]);
+  const candidatos = useMemo(() => abertos.filter(a => !usados.has(a.id) && (!busca || casaBusca(busca, [a.favorecido], cad.beneficiarios.find(b => b.id === a.beneficiario_id)?.documento))).slice(0, 30), [abertos, busca, linhas]);
   const set = (k: string, campo: 'cliente' | 'valor', v: string) => setLinhas(linhas.map(l => (l.chave === k ? { ...l, [campo]: v } : l)));
 
   /** Título (conta original) de um pagamento: o próprio lançamento ou a conta da qual ele é parcial */
@@ -85,7 +87,7 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
     try {
       const novos: Item[] = [];
       if (lote.tipo === 'consolidado') {
-        novos.push(...ativos.map(l => { const b = cad.beneficiarios.find(x => rotuloB(x) === l.cliente || x.nome === l.cliente); return { beneficiario_id: b?.id ?? null, nome: b?.nome || l.cliente.trim() || null, valor: r2(Number(l.valor)), lancamento_id: null }; }));
+        novos.push(...ativos.map(l => { const b = acharCadastro(cad.beneficiarios, l.cliente); return { beneficiario_id: b?.id ?? null, nome: b?.nome || l.cliente.trim() || null, valor: r2(Number(l.valor)), lancamento_id: null }; }));
         const r = await supabase.from('lancamentos').update({ valor: total, vencimento: f.data, data_pagamento: f.data, conta_id: conta, favorecido: `Recebimento de boletos (${n})`, referencia: `Lote de ${n} boleto(s)`, atualizado_em: agora() }).eq('id', lote.lanc_consolidado_id!);
         if (r.error) throw new Error(r.error.message);
       } else {
@@ -168,7 +170,7 @@ export function ModalEditarLote({ loteId, cad, aoFechar, aoSalvar }: { loteId: n
           <label className="span2">Total<input disabled value={`${brl(total)} em ${n} item(ns)`} /></label>
           {ent && <CamposTarifa t={f.tarifa} setT={t => setF({ ...f, tarifa: t })} data={f.data} cad={cad} n={n} />}
         </div>
-        <datalist id="editar-lote-clientes">{cad.beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotuloB(b)} />)}</datalist>
+        <OpcoesCadastro id="editar-lote-clientes" lista={cad.beneficiarios} />
         <div style={{ maxHeight: '38vh', overflow: 'auto', marginTop: 10 }}>
           <table className="compacta lote-contas">
             <thead><tr><th>#</th><th>{ent ? 'Cliente / Origem' : 'Fornecedor / Beneficiário'}</th>{baixa && <th>Vencimento</th>}{baixa && <th className="r">Desconto</th>}<th className="r">{ent ? 'Valor recebido' : 'Valor pago'}</th><th /></tr></thead>

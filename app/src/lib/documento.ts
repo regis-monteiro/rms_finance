@@ -31,3 +31,28 @@ export function documentoValido(v: string) {
 
 export const tipoPessoa = (v: string) => (soDigitos(v).length === 14 ? 'PJ' : 'PF');
 export const formatarCep = (v: string) => soDigitos(v).slice(0, 8).replace(/(\d{5})(\d)/, '$1-$2');
+
+/** Rótulo padrão de um cadastro nas listas de escolha: "Nome · 00.000.000/0000-00" */
+export const rotuloCadastro = (b?: { nome: string; documento: string }) => (b ? `${b.nome} · ${formatarDocumento(b.documento)}` : '');
+
+/**
+ * Acha o cadastro digitado ou escolhido: pelo rótulo, pelo nome (sem diferenciar maiúsculas)
+ * ou pelo CPF/CNPJ digitado com ou sem pontos, barras e traços.
+ */
+export function acharCadastro<T extends { nome: string; documento: string }>(lista: T[], texto: string | null | undefined): T | undefined {
+  const t = (texto || '').trim(); if (!t) return undefined;
+  const porRotulo = lista.find(b => rotuloCadastro(b) === t); if (porRotulo) return porRotulo;
+  const porNome = lista.find(b => b.nome.toLowerCase() === t.toLowerCase()); if (porNome) return porNome;
+  const d = soDigitos(t.includes('·') ? t.split('·').pop()! : t);
+  if (d.length === 11 || d.length === 14) return lista.find(b => soDigitos(b.documento) === d);
+  return undefined;
+}
+
+/** Busca que ignora maiúsculas, acentos e, para CPF/CNPJ, pontos, barras e traços */
+export function casaBusca(busca: string, textos: (string | null | undefined)[], documento?: string | null) {
+  const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const q = norm((busca || '').trim()); if (!q) return true;
+  if (norm(textos.filter(Boolean).join(' ')).includes(q)) return true;
+  const d = soDigitos(busca);
+  return d.length >= 3 && !!documento && soDigitos(documento).includes(d) && /^[\d\s./-]+$/.test(busca.trim());
+}

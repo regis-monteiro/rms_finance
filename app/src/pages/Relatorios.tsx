@@ -29,7 +29,7 @@ async function todos<T>(montar: (de: number, ate: number) => PromiseLike<{ data:
 
 export default function Relatorios() {
   const { usuario } = useAuth();
-  const { contas, grupos, subgrupos, cartoes, beneficiarios } = useCadastros();
+  const { contas, todosGrupos: grupos, todosSub: subgrupos, cartoes, beneficiarios } = useCadastros();
   const hoje = hojeISO();
   const [tipo, setTipo] = useState<Tipo>('pagar');
   const [de, setDe] = useState(hoje.slice(0, 8) + '01');

@@ -30,7 +30,7 @@ async function todos<T>(q: () => { range: (a: number, b: number) => PromiseLike<
 export default function FluxoProjetado() {
   const nav = useNavigate();
   const { usuario } = useAuth();
-  const { grupos } = useCadastros();
+  const { todosGrupos: grupos } = useCadastros();
   const hoje = hojeISO(), mes0 = mesDe(hoje), mesFim = somaMeses(mes0, 11), fim = fimDoMes(mesFim);
   const [op, setOp] = usePersistente('fluxo:opcoes', { orcamento: true, aplicacoes: false, vencidos: true, visao: 'mensal' as Visao });
   const [d, setD] = useState<Dados | null>(null);

@@ -58,6 +58,7 @@ Aplicativo de controle financeiro interno da RMS Organização Contábil.
 - Versão 1.10: aviso de contas Previstas com vencimento passado em Lançamentos, Contas a pagar e Contas a receber, com atualização das datas em lote (data geral ou por linha).
 - Versão 1.11: cliente relacionado (opcional) nas contas a pagar: formulário, lançamento e alteração em lote, etiqueta nas listas, coluna, filtro e total por cliente nos relatórios (script `supabase/022_lancamentos_cliente.sql`).
 - Versão 1.12: associação da conciliação continua aberta após gravar; "Salvar e lançar outro" no lançamento, compra do cartão, lotes e transferência; reclassificação retroativa de semelhantes; aba Evolução nos Comparativos (script `supabase/023_evolucao.sql`).
+- Versão 1.13: histórico de reclassificações com desfazer (plano de contas, semelhantes e alteração em lote); vários telefones por cadastro com principal; busca por CPF/CNPJ sem pontuação; telas de lançamento só com grupos e subgrupos ativos (script `supabase/024_historico_reclass_telefones.sql`).
 - Versão 0.9: associação de várias linhas do extrato a um lançamento do app (e o contrário) na conciliação, com somas iguais; rótulos Fornecedor / Beneficiário nos pagamentos e Cliente / Origem nos recebimentos (script `supabase/012_associacao_conciliacao.sql`).
 
 Configuração: ver `docs/configuracao.md`.

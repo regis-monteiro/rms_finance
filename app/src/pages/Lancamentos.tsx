@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { acharCadastro, casaBusca } from '../lib/documento';
+import OpcoesCadastro from '../components/OpcoesCadastro';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
@@ -32,7 +34,7 @@ const dataEfetiva = (l: Lancamento) => (l.status === 'pago' && l.data_pagamento 
 const rotulo = (b?: { nome: string; documento: string }) => (b ? `${b.nome} · ${formatarDocumento(b.documento)}` : '');
 
 export default function Lancamentos() {
-  const { todosSub, centros, contas, grupos, subgrupos, beneficiarios, recarregar } = useCadastros();
+  const { todosSub, centros, contas, grupos, subgrupos, beneficiarios, recarregar , todosGrupos } = useCadastros();
   const [novoBenef, setNovoBenef] = usePersistente('lanc:novo-benef', false);
   const [buscaBenef, setBuscaBenef] = usePersistente('lanc:benef', '');
   const hoje = hojeISO();
@@ -108,7 +110,7 @@ export default function Lancamentos() {
   const linhas = useMemo(() => lista.filter(l =>
     (!f.tipo || l.tipo === f.tipo) && (!f.conta || String(l.conta_id) === f.conta) &&
     (!f.status || statusEfetivo(l.status, l.vencimento) === f.status) &&
-    (!f.busca || (l.favorecido + nome(grupos, l.grupo_id) + nome(todosSub, l.subgrupo_id)).toLowerCase().includes(f.busca.toLowerCase()))
+    (!f.busca || casaBusca(f.busca, [l.favorecido, nome(todosGrupos, l.grupo_id), nome(todosSub, l.subgrupo_id), l.referencia, l.documento], beneficiarios.find(b => b.id === l.beneficiario_id)?.documento))
   ), [lista, f, grupos, subgrupos]);
   const exibicao = useMemo(() => {
     const out: (Lancamento | { lote: number; tipo: 'entrada' | 'saida'; data: string; conta: number | null; valor: number; n: number; grupos: number[]; subs: (number | null)[] })[] = [];
@@ -199,7 +201,7 @@ export default function Lancamentos() {
 
   /** Classificação nova para um fornecedor/cliente: oferece levar aos lançamentos anteriores semelhantes */
   async function perguntarSemelhantes(l: Lancamento) {
-    try { const p = await buscarSemelhantes(l, id => nome(grupos, id)); if (p) setReclass(p); } catch { /* sugestão opcional */ }
+    try { const p = await buscarSemelhantes(l, id => nome(todosGrupos, id)); if (p) setReclass(p); } catch { /* sugestão opcional */ }
   }
   /** Baixas do mesmo dia, conta e classificação: oferece reunir no lote do dia */
   async function perguntarLotes(ids: number[]) {
@@ -211,7 +213,7 @@ export default function Lancamentos() {
   async function sincronizarJuros(l: Lancamento): Promise<string | null> {
     const juros = Number(l.juros_multa || 0);
     if (l.status === 'pago' && juros > 0) {
-      const g = grupos.find(x => x.nome === (l.tipo === 'saida' ? 'Despesas financeiras' : 'Receitas financeiras'));
+      const g = todosGrupos.find(x => x.nome === (l.tipo === 'saida' ? 'Despesas financeiras' : 'Receitas financeiras'));
       if (!g) return 'rode o arquivo 007_multa_juros.sql no Supabase';
       const sg = subgrupos.find(x => x.grupo_id === g.id && x.nome === 'Multa/juros por atraso');
       const dados = { tipo: l.tipo, conta_id: l.conta_id, vencimento: l.data_pagamento, data_pagamento: l.data_pagamento, grupo_id: g.id, subgrupo_id: sg?.id ?? null,
@@ -296,11 +298,11 @@ export default function Lancamentos() {
   };
   const novo = () => { setErro(''); setBuscaBenef(''); setRateio(null); setForm({ tipo: 'saida', vencimento: hoje, status: 'previsto', forma_pagamento: 'Boleto', favorecido: '', valor: undefined }); };
   const subsDoGrupo = subgrupos.filter(s => s.grupo_id === Number(form?.grupo_id));
-  const grupoForm = grupos.find(g => g.id === Number(form?.grupo_id));
+  const grupoForm = todosGrupos.find(g => g.id === Number(form?.grupo_id));
   const exigeBenef = !!form && form.tipo === 'saida' && (form.vencimento || '') >= '2027-01-01' && !form.fatura_id && !form.transferencia_id && !['Transferências', 'Pagamento de fatura'].includes(grupoForm?.nome || '') && contas.find(c => c.id === Number(form.conta_id))?.tipo !== 'aplicacao';
   function escolherBenef(texto: string) {
     setBuscaBenef(texto);
-    const b = beneficiarios.find(x => rotulo(x) === texto);
+    const b = acharCadastro(beneficiarios, texto);
     if (!form) return;
     if (!b) { if (!texto) setForm({ ...form, beneficiario_id: null }); return; }
     setForm({ ...form, beneficiario_id: b.id, favorecido: b.nome, grupo_id: form.grupo_id || b.grupo_id || undefined, subgrupo_id: form.grupo_id ? form.subgrupo_id : b.subgrupo_id });
@@ -309,7 +311,7 @@ export default function Lancamentos() {
   useEffect(() => {
     if (form?.beneficiario_id && !buscaBenef) { const b = beneficiarios.find(x => x.id === form.beneficiario_id); if (b) setBuscaBenef(rotulo(b)); return; }
     if (!form || form.beneficiario_id || !buscaBenef) return;
-    const b = beneficiarios.find(x => rotulo(x) === buscaBenef);
+    const b = acharCadastro(beneficiarios, buscaBenef);
     if (b) setForm({ ...form, beneficiario_id: b.id, favorecido: (form.favorecido || '').trim() || b.nome });
   }, [buscaBenef, form?.beneficiario_id, beneficiarios]);
   const [ano, m] = mes.split('-').map(Number);
@@ -355,7 +357,7 @@ export default function Lancamentos() {
               <tr key={'lote' + x.lote} className="clicavel" title="Ver e editar o lote" onClick={() => setLoteAberto(x.lote)}>
                 <td className="c" />
                 <td>{diaMes(x.data)}</td><td style={{ color: 'var(--muted)' }}>·</td><td>{x.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}<div><span className="tag">Lote</span></div></td>
-                <td>{nome(contas, x.conta)}</td><td>{x.grupos.length === 1 ? nome(grupos, x.grupos[0]) : 'Vários'}</td><td>{x.subs.length === 1 ? nome(todosSub, x.subs[0]) || '·' : 'Vários'}</td>
+                <td>{nome(contas, x.conta)}</td><td>{x.grupos.length === 1 ? nome(todosGrupos, x.grupos[0]) : 'Vários'}</td><td>{x.subs.length === 1 ? nome(todosSub, x.subs[0]) || '·' : 'Vários'}</td>
                 <td>{x.tipo === 'entrada' ? `Recebimento em lote (${x.n} ${x.n > 1 ? 'itens' : 'item'})` : `Pagamento em lote (${x.n} ${x.n > 1 ? 'itens' : 'item'})`}</td><td>·</td>
                 <td className={'r ' + (x.tipo === 'entrada' ? 'pos' : '')}>{x.tipo === 'saida' ? '−' : ''}{brl(x.valor)}</td><td><span className="st pago">Pago</span></td><td className={'r ' + (saldos[i] < 0 ? 'neg' : '')} style={{ whiteSpace: 'nowrap' }}>{brl(saldos[i])}</td>
               </tr>);
@@ -363,7 +365,7 @@ export default function Lancamentos() {
               <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => abrir({ ...l })}>
                 <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => { const n = new Set(sel); e.target.checked ? n.add(l.id) : n.delete(l.id); setSel(n); }} /></td>
                 <td>{l.status === 'pago' && l.data_pagamento ? diaMes(l.data_pagamento) : <span style={{ color: 'var(--muted)' }}>·</span>}</td><td style={l.status === 'pago' ? { color: 'var(--muted)' } : undefined}>{diaMes(l.vencimento)}</td><td>{l.tipo === 'entrada' ? <span className="pos">Entrada</span> : 'Saída'}{l.transferencia_id && <div><span className="tag">Transferência</span></div>}</td>
-                <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(grupos, l.grupo_id)}{comRateio.has(l.id) && <div><span className="tag">Rateio</span></div>}</td><td>{nome(todosSub, l.subgrupo_id) || '·'}</td>
+                <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{nome(todosGrupos, l.grupo_id)}{comRateio.has(l.id) && <div><span className="tag">Rateio</span></div>}</td><td>{nome(todosSub, l.subgrupo_id) || '·'}</td>
                 <td>{l.favorecido}{l.cliente_id ? <div><span className="tag">Cliente: {nome(beneficiarios, l.cliente_id)}</span></div> : null}</td><td>{l.referencia || '·'}</td>
                 <td className={'r ' + (l.tipo === 'entrada' ? 'pos' : '')}>{l.tipo === 'saida' ? '−' : ''}{brl(l.valor)}{l.titulo_id ? <div><span className="tag">Parcial</span></div> : l.valor_original != null ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.status === 'pago' ? 'última parcela de ' : 'saldo de '}{brl(l.valor_original)}</div> : null}</td>
                 <td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td><td className={'r ' + (saldos[i] < 0 ? 'neg' : '')} style={{ whiteSpace: 'nowrap', color: l.status !== 'pago' && saldos[i] >= 0 ? 'var(--muted)' : undefined }}>{brl(saldos[i])}</td>
@@ -392,8 +394,10 @@ export default function Lancamentos() {
                   <button type="button" className="btn ghost mini" onClick={() => setRateio(null)}>Remover rateio</button></div>
                 <EditorRateio total={Number(form.valor || 0)} linhas={rateio} aoMudar={setRateio} grupos={grupos} subgrupos={subgrupos} centros={centros} tipo={form.tipo || 'saida'} />
               </> : <>
-              <label>Grupo<select required value={form.grupo_id ?? ''} onChange={e => setForm({ ...form, grupo_id: Number(e.target.value), subgrupo_id: null })}><option value="" disabled>Selecione</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}</select></label>
-              <label>Subgrupo<select value={form.subgrupo_id ?? ''} onChange={e => setForm({ ...form, subgrupo_id: e.target.value ? Number(e.target.value) : null })}><option value="">·</option>{subsDoGrupo.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>
+              <label>Grupo<select required value={form.grupo_id ?? ''} onChange={e => setForm({ ...form, grupo_id: Number(e.target.value), subgrupo_id: null })}><option value="" disabled>Selecione</option>{grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}
+                {form.grupo_id && !grupos.some(g => g.id === form.grupo_id) && <option value={form.grupo_id}>{nome(todosGrupos, form.grupo_id)} (inativo)</option>}</select></label>
+              <label>Subgrupo<select value={form.subgrupo_id ?? ''} onChange={e => setForm({ ...form, subgrupo_id: e.target.value ? Number(e.target.value) : null })}><option value="">·</option>{subsDoGrupo.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                {form.subgrupo_id && !subsDoGrupo.some(s => s.id === form.subgrupo_id) && <option value={form.subgrupo_id}>{nome(todosSub, form.subgrupo_id)} (inativo)</option>}</select></label>
               <label className="span2">Centro de custo<select value={form.centro_custo_id ?? ''} onChange={e => setForm({ ...form, centro_custo_id: e.target.value ? Number(e.target.value) : null })}>
                 <option value="">{'Padrão do plano: ' + (nomeCentro(centros, centroPadrao(grupos, subgrupos, Number(form.grupo_id), Number(form.subgrupo_id))) || 'Geral (sem centro)')}</option><OpcoesCentro centros={centros} /></select></label>
               {!form.transferencia_id && !form.fatura_id && <SugestaoClassificacao tipo={form.tipo || 'saida'} beneficiario_id={form.beneficiario_id} texto={form.favorecido} grupo_id={form.grupo_id} subgrupo_id={form.subgrupo_id}
@@ -406,7 +410,7 @@ export default function Lancamentos() {
                   <input list="lista-benef" style={{ flex: 1 }} placeholder="Digite o nome ou CPF/CNPJ" value={buscaBenef} onChange={e => escolherBenef(e.target.value)} required={exigeBenef} />
                   <button type="button" className="btn ghost" onClick={() => setNovoBenef(true)}>+ Novo</button>
                 </span>
-                <datalist id="lista-benef">{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotulo(b)} />)}</datalist>
+                <OpcoesCadastro id="lista-benef" lista={beneficiarios} />
               </label>
               {!form.beneficiario_id && <label className="span2">{rotuloParte(form.tipo)}<input required value={form.favorecido} onChange={e => setForm({ ...form, favorecido: e.target.value })} /></label>}
               <label>Referência<input placeholder="Parcela ou competência" value={form.referencia ?? ''} onChange={e => setForm({ ...form, referencia: e.target.value })} /></label>
@@ -454,7 +458,7 @@ export default function Lancamentos() {
           <div className="actions"><button className="btn ghost" onClick={() => setModal(null)}>Cancelar</button><button className="btn" onClick={desfazerSelecionados}>Desfazer baixa</button></div>
         </div></div>
       )}
-      {reclass && <ReclassificarSemelhantes pedido={reclass} nomeGrupo={id => nome(grupos, id)} nomeSub={id => nome(todosSub, id)} aoFechar={n => { setReclass(null); if (n) { avisar(`${n} lançamento(s) reclassificado(s).`); setVersao(v => v + 1); } }} />}
+      {reclass && <ReclassificarSemelhantes pedido={reclass} nomeGrupo={id => nome(todosGrupos, id)} nomeSub={id => nome(todosSub, id)} aoFechar={n => { setReclass(null); if (n) { avisar(`${n} lançamento(s) reclassificado(s).`); setVersao(v => v + 1); } }} />}
       {lotesDia && <ConfirmarLotes pendentes={lotesDia} cad={{ contas, grupos, subgrupos: todosSub }} aoConcluir={() => { setLotesDia(null); setVersao(v => v + 1); }} />}
       {loteAberto != null && <ModalEditarLote loteId={loteAberto} cad={{ contas, grupos, subgrupos, centros, beneficiarios }} aoFechar={() => setLoteAberto(null)}
         aoSalvar={m => { setLoteAberto(null); avisar(m); setVersao(v => v + 1); }} />}

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { acharCadastro } from '../lib/documento';
+import OpcoesCadastro from '../components/OpcoesCadastro';
 import CampoValor from '../components/CampoValor';
 import DataBR from '../components/DataBR';
 import { useSearchParams } from 'react-router-dom';
@@ -19,7 +21,7 @@ const MES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out
 const comp = (c: string) => MES[Number(c.slice(5, 7)) - 1] + '/' + c.slice(0, 4);
 
 export default function Cartoes() {
-  const { centros, contas, grupos, subgrupos, todosSub, cartoes, beneficiarios } = useCadastros();
+  const { centros, contas, grupos, subgrupos, todosSub, cartoes, beneficiarios , todosGrupos } = useCadastros();
   const hoje = hojeISO();
   const [params, setParams] = useSearchParams();
   const [faturas, setFaturas] = useState<Fatura[]>([]);
@@ -91,7 +93,7 @@ export default function Cartoes() {
   }, [beneficiarios, historico]);
   const rotuloCli = (b?: { nome: string; documento: string }) => (b ? `${b.nome} · ${formatarDocumento(b.documento)}` : '');
   /** Cliente relacionado (opcional): null se em branco, undefined se o texto não corresponde a um cadastro */
-  const idCliente = (t?: string) => { const q = (t || '').trim(); if (!q) return null; const b = beneficiarios.find(x => rotuloCli(x) === q || x.nome.toLowerCase() === q.toLowerCase()); return b ? b.id : undefined; };
+  const idCliente = (t?: string) => { const q = (t || '').trim(); if (!q) return null; const b = acharCadastro(beneficiarios, q); return b ? b.id : undefined; };
   const nomeCli = (id?: number | null) => beneficiarios.find(b => b.id === id)?.nome || '';
   const nomeSub = (id: number | null) => todosSub.find(x => x.id === id)?.nome || '';
   const despesas = grupos.filter(g => g.natureza !== 'receita' && g.nome !== 'Pagamento de fatura');
@@ -106,7 +108,7 @@ export default function Cartoes() {
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [compras]);
   const maxG = porGrupo[0]?.[1] || 1;
-  const nomeG = (id: number) => grupos.find(g => g.id === id)?.nome || '';
+  const nomeG = (id: number) => todosGrupos.find(g => g.id === id)?.nome || '';
   const abertoCartao = (id: number) => faturas.filter(f => f.cartao_id === id).reduce((a, f) => a + Math.max(0, Number(f.total) - Number(f.pago)), 0);
 
   async function salvarCompra(e: React.FormEvent) {
@@ -170,7 +172,7 @@ export default function Cartoes() {
     e.preventDefault(); if (!pagto || !fat) return; setErro('');
     const valor = Number(pagto.valor);
     if (valor <= 0 || valor > aPagar + 0.004) { setErro('O valor deve ser maior que zero e até ' + brl(aPagar) + '.'); return; }
-    const g = grupos.find(x => x.nome === 'Pagamento de fatura');
+    const g = todosGrupos.find(x => x.nome === 'Pagamento de fatura');
     const { error } = await supabase.from('lancamentos').insert({ tipo: 'saida', conta_id: Number(pagto.conta), vencimento: fat.data_vencimento,
       data_pagamento: pagto.status === 'pago' ? pagto.data : null, grupo_id: g!.id, favorecido: 'Fatura ' + fat.cartao, referencia: comp(fat.competencia),
       valor, status: pagto.status, fatura_id: fat.id });
@@ -272,7 +274,7 @@ export default function Cartoes() {
         </div>
       )}
 
-      <datalist id="clientes-rel">{beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotuloCli(b)} />)}</datalist>
+      <OpcoesCadastro id="clientes-rel" lista={beneficiarios} />
       <datalist id="estabelecimentos">{opcoesEstab.map(n => <option key={n} value={n} />)}</datalist>
       {novaCompra && cartao && (
         <div className="modal-bg open">
@@ -288,7 +290,7 @@ export default function Cartoes() {
               <label>Subgrupo<select value={novaCompra.sub || ''} onChange={e => setNovaCompra({ ...novaCompra, sub: e.target.value })}><option value="">·</option>
                 {subgrupos.filter(x => x.grupo_id === Number(novaCompra.grupo)).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
               <label>Centro de custo<select value={novaCompra.centro || ''} onChange={e => setNovaCompra({ ...novaCompra, centro: e.target.value })}>
-                <option value="">{'Padrão do plano: ' + (nomeCentro(centros, grupos.find(g => g.id === Number(novaCompra.grupo))?.centro_custo_id) || 'Geral')}</option><OpcoesCentro centros={centros} /></select></label>
+                <option value="">{'Padrão do plano: ' + (nomeCentro(centros, todosGrupos.find(g => g.id === Number(novaCompra.grupo))?.centro_custo_id) || 'Geral')}</option><OpcoesCentro centros={centros} /></select></label>
               <label>Parcelas<input type="number" min={1} max={24} value={novaCompra.parcelas} onChange={e => setNovaCompra({ ...novaCompra, parcelas: e.target.value })} /></label>
               <label className="full">Cliente relacionado (opcional)<input list="clientes-rel" value={novaCompra.cliente || ''} onChange={e => setNovaCompra({ ...novaCompra, cliente: e.target.value })} placeholder="Nome ou CNPJ do cliente para quem a compra foi feita" /></label>
               <label className="full">Observações / detalhes<input value={novaCompra.obs || ''} onChange={e => setNovaCompra({ ...novaCompra, obs: e.target.value })} placeholder="Ex.: material de escritório para o setor fiscal" /></label>
@@ -320,7 +322,7 @@ export default function Cartoes() {
               <label>Subgrupo<select value={editC.sub} disabled={!editC.grupo} onChange={e => setEditC({ ...editC, sub: e.target.value })}><option value="">·</option>
                 {subgrupos.filter(x => x.grupo_id === Number(editC.grupo) || String(x.id) === editC.sub).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
               <label className="full">Centro de custo<select value={editC.centro} onChange={e => setEditC({ ...editC, centro: e.target.value })}>
-                <option value="">{editC.ids.length === 1 ? 'Padrão do plano: ' + (nomeCentro(centros, grupos.find(g => g.id === Number(editC.grupo))?.centro_custo_id) || 'Geral') : 'Manter o de cada compra'}</option><OpcoesCentro centros={centros} /></select></label>
+                <option value="">{editC.ids.length === 1 ? 'Padrão do plano: ' + (nomeCentro(centros, todosGrupos.find(g => g.id === Number(editC.grupo))?.centro_custo_id) || 'Geral') : 'Manter o de cada compra'}</option><OpcoesCentro centros={centros} /></select></label>
               <label className="full">Cliente relacionado (opcional)<input list="clientes-rel" value={editC.cliente} onChange={e => setEditC({ ...editC, cliente: e.target.value })} placeholder={editC.ids.length > 1 ? 'Em branco mantém o de cada compra' : 'Nome ou CNPJ do cliente'} /></label>
               {editC.ids.length === 1 && <label className="full">Observações / detalhes<input value={editC.obs} onChange={e => setEditC({ ...editC, obs: e.target.value })} /></label>}
               <p className="full" style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>A compra continua nesta fatura. Para mudar de fatura ou de número de parcelas, exclua e lance novamente.</p>

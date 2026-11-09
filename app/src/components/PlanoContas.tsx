@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import HistoricoReclass from './HistoricoReclass';
 import DataBR from './DataBR';
 import { supabase, type CentroCusto, type Grupo, type Subgrupo } from '../lib/supabase';
 import { OpcoesCentro, nomeCentro } from '../lib/useCadastros';
@@ -202,6 +203,7 @@ export default function PlanoContas({ aoMudar, avisar }: { aoMudar: () => void; 
           </div>
         </div>
       )}
+      <HistoricoReclass versao={versao} aoDesfazer={m => { avisar(m); setVersao(v => v + 1); aoMudar(); }} />
     </>
   );
 }

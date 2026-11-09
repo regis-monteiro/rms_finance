@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { acharCadastro } from '../lib/documento';
+import OpcoesCadastro from './OpcoesCadastro';
 import { supabase, type Beneficiario, type CentroCusto, type Conta, type Grupo, type Lancamento, type Subgrupo } from '../lib/supabase';
 import { brl, dataBR } from '../lib/format';
 import { OpcoesCentro, nomeCentro, centroPadrao } from '../lib/useCadastros';
@@ -145,7 +147,7 @@ export function ImportarBoletos({ cad, aoFechar, aoConcluir }: { cad: Cad; aoFec
       const nome = String(get('cliente') ?? '').trim(), venc = dataISO(get('vencimento')), valor = r2(numero(get('valor')));
       const boleto = String(get('boleto') ?? '').trim(), ref = String(get('referencia') ?? '').trim(), parcela = String(get('parcela') ?? '').trim();
       const contaTxt = String(get('conta') ?? '').trim(), conta = contasMapa[contaTxt] || contaPadrao;
-      const escolhido = escolhas[i] != null ? cad.beneficiarios.find(b => rotuloB(b) === escolhas[i]) : undefined;
+      const escolhido = escolhas[i] != null ? acharCadastro(cad.beneficiarios, escolhas[i]) : undefined;
       const achado = escolhas[i] != null ? { b: escolhido } : acharCliente(nome);
       let sit: Sit = 'novo', prev: Lancamento | undefined;
       if (!nome || !venc || !(valor > 0)) sit = 'invalido';
@@ -252,7 +254,7 @@ export function ImportarBoletos({ cad, aoFechar, aoConcluir }: { cad: Cad; aoFec
                   <button key={k} className={filtro === k ? 'on' : ''} onClick={() => setFiltro(k)}>{t}</button>)}
               </div>
             </div>
-            <datalist id="imp-boletos-clientes">{cad.beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotuloB(b)} />)}</datalist>
+            <OpcoesCadastro id="imp-boletos-clientes" lista={cad.beneficiarios} />
             <div style={{ maxHeight: '40vh', overflow: 'auto' }}>
               <table className="compacta"><thead><tr><th>Cliente na planilha</th><th>Cadastro</th><th>Vencimento</th><th>Boleto</th><th>Ref.</th><th>Banco</th><th className="r">Valor</th><th>Situação</th></tr></thead>
                 <tbody>{visiveis.map(l => (

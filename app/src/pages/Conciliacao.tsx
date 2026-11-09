@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { casaBusca } from '../lib/documento';
 import DataBR from '../components/DataBR';
 import { Cabecalho } from '../components/Layout';
 import { supabase, type Lancamento } from '../lib/supabase';
@@ -54,7 +55,7 @@ function casarExtrato(ext: ExtratoOFX, app: DadosApp): Par[] {
 }
 
 export default function Conciliacao() {
-  const { contas, grupos, subgrupos, centros, beneficiarios } = useCadastros();
+  const { contas, grupos, subgrupos, centros, beneficiarios , todosGrupos } = useCadastros();
   const [conta, setConta] = usePersistente('conc:conta', '');
   const [arquivo, setArquivo] = usePersistente<{ nome: string; ext: ExtratoOFX; origem?: 'ofx' | 'api'; buscadoEm?: string; conta?: string } | null>('conc:extrato', null);
   const [periodo, setPeriodo] = usePersistente('conc:periodo', { inicio: somaDias(hojeISO(), -30), fim: hojeISO() });
@@ -216,7 +217,7 @@ export default function Conciliacao() {
   const decisao = (p: Par): Dec => {
     const d = dec[p.t.fitid]; if (d) return d;
     if (p.sit !== 'novo') return { marcado: (p.sit === 'pago' || p.sit === 'aberto') && !!p.l && nomeConfere(p.t, p.l) && !rejeitado(p), grupo: '', sub: '', centro: '', benef: '', fav: '', ajustarData: true };
-    const s = sugestoes.get(p.t.fitid), o = s?.opcoes.find(x => !ESPECIAIS.includes(grupos.find(g => g.id === x.grupo_id)?.nome || ''));
+    const s = sugestoes.get(p.t.fitid), o = s?.opcoes.find(x => !ESPECIAIS.includes(todosGrupos.find(g => g.id === x.grupo_id)?.nome || ''));
     const b = s?.beneficiario_id ? beneficiarios.find(x => x.id === s.beneficiario_id) : undefined;
     return { marcado: false, grupo: o ? String(o.grupo_id) : '', sub: o?.subgrupo_id ? String(o.subgrupo_id) : '', centro: o?.centro_custo_id ? String(o.centro_custo_id) : '', benef: b ? String(b.id) : '', fav: b?.nome || p.t.nome || p.t.memo, ajustarData: true };
   };
@@ -226,7 +227,7 @@ export default function Conciliacao() {
     if (k !== 'marcado' && p.sit === 'novo' && n.grupo) n.marcado = true;
     setDec({ ...dec, [p.t.fitid]: n });
   };
-  const exigeBenef = (p: Par, d: Dec) => p.t.tipo === 'saida' && p.t.data >= '2027-01-01' && !ESPECIAIS.includes(grupos.find(g => g.id === Number(d.grupo))?.nome || '');
+  const exigeBenef = (p: Par, d: Dec) => p.t.tipo === 'saida' && p.t.data >= '2027-01-01' && !ESPECIAIS.includes(todosGrupos.find(g => g.id === Number(d.grupo))?.nome || '');
   const pronta = (p: Par, d: Dec) => p.sit !== 'novo' || (!!d.grupo && (!exigeBenef(p, d) || !!d.benef) && !!(d.fav || p.t.nome || p.t.memo));
 
   async function abrirArquivo(f: File) {
@@ -276,7 +277,7 @@ export default function Conciliacao() {
   const novaImportacao = () => { setArquivo(null); setDec({}); limparRascunhos('conc:decisoes'); setMsg(''); setErro(''); };
   const cont = (s: Situacao) => pares.filter(p => p.sit === s).length;
   const aAplicar = pares.filter(p => { const d = decisao(p); return d.marcado && p.sit !== 'conciliado' && p.sit !== 'associado' && pronta(p, d); }).length;
-  const nomeG = (id: number | null | undefined) => grupos.find(g => g.id === id)?.nome || '';
+  const nomeG = (id: number | null | undefined) => todosGrupos.find(g => g.id === id)?.nome || '';
   const nomeS = (id: number | null | undefined) => subgrupos.find(s => s.id === id)?.nome || '';
   const visiveis = pares.filter(p => !filtro || p.sit === filtro);
   const totE = ext?.transacoes.filter(t => t.tipo === 'entrada').reduce((a, t) => a + t.valor, 0) || 0, totS = ext?.transacoes.filter(t => t.tipo === 'saida').reduce((a, t) => a + t.valor, 0) || 0;
@@ -391,7 +392,7 @@ export default function Conciliacao() {
         const conc = new Set(pares.filter(p => p.sit === 'conciliado').map(p => p.l!.id));
         const q = assocAberta.busca.trim().toLowerCase();
         const candidatos = [...app.pagos.filter(l => !l.ofx_fitid || l.ofx_fitid.startsWith('efipix:')), ...app.abertos]
-          .filter(l => !assocIds.has(l.id) && !conc.has(l.id) && (!q || (l.favorecido + ' ' + nomeG(l.grupo_id) + ' ' + brl(l.valor)).toLowerCase().includes(q)))
+          .filter(l => !assocIds.has(l.id) && !conc.has(l.id) && (!q || casaBusca(assocAberta.busca, [l.favorecido, nomeG(l.grupo_id), brl(l.valor)], beneficiarios.find(b => b.id === l.beneficiario_id)?.documento)))
           .sort((a, b) => (a.data_pagamento || a.vencimento).localeCompare(b.data_pagamento || b.vencimento));
         const selE = livresExt.filter(p => assocAberta.ext.includes(p.t.fitid)).map(p => p.t);
         const selA = [...app.pagos, ...app.abertos].filter(l => assocAberta.app.includes(l.id));

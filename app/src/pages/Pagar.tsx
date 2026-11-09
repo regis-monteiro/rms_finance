@@ -21,7 +21,7 @@ import { BarraSelecao, ModalBaixarVarias, ModalExcluirContas } from '../componen
 const SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
 export default function Pagar() {
-  const { contas, grupos, subgrupos, beneficiarios, centros } = useCadastros();
+  const { contas, grupos, subgrupos, beneficiarios, centros , todosGrupos } = useCadastros();
   const [lote, setLote] = usePersistente('pagar:lote', false);
   const [aviso, setAviso] = useState('');
   const [copiado, setCopiado] = useState(false);
@@ -94,7 +94,7 @@ export default function Pagar() {
       await sincronizarFatura(l.fatura_id);
     }
     if (juros > 0) {
-      const g = grupos.find(x => x.nome === 'Despesas financeiras') || grupos.find(x => x.nome === 'Juros Bancários');
+      const g = todosGrupos.find(x => x.nome === 'Despesas financeiras') || todosGrupos.find(x => x.nome === 'Juros Bancários');
       const sg = subgrupos.find(x => x.grupo_id === g!.id && x.nome === 'Multa/juros por atraso');
       const r = await supabase.from('lancamentos').insert({ tipo: 'saida', conta_id, vencimento: baixa.data, data_pagamento: baixa.data, grupo_id: g!.id, subgrupo_id: sg?.id ?? null, favorecido: l.favorecido, beneficiario_id: l.beneficiario_id, referencia: 'Multa/juros: ' + (l.referencia || dataBR(l.vencimento)), valor: juros, status: 'pago', observacao: 'multa/juros por atraso' }).select('id').single();
       if (!r.error && !parcial && !l.fatura_id) await supabase.from('lancamentos').update({ juros_multa: juros, juros_lanc_id: r.data.id }).eq('id', l.id);
@@ -141,7 +141,7 @@ export default function Pagar() {
                 <tr key={l.id} className="clicavel" title={l.fatura_id ? 'Abrir a fatura' : 'Alterar a conta'} onClick={() => editar(l)} style={sel.has(l.id) ? { background: 'var(--gold-soft)' } : undefined}>
                   <td className="c" onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.has(l.id)} onChange={e => alternar(l.id, e.target.checked)} /></td>
                   <td>{diaMes(l.vencimento)}</td><td>{l.favorecido}{l.observacao && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{l.observacao}</div>}{l.cliente_id ? <div><span className="tag">Cliente: {beneficiarios.find(b => b.id === l.cliente_id)?.nome}</span></div> : null}</td>
-                  <td>{nome(grupos, l.grupo_id)}</td><td>{nome(subgrupos, l.subgrupo_id) || '·'}</td>
+                  <td>{nome(todosGrupos, l.grupo_id)}</td><td>{nome(subgrupos, l.subgrupo_id) || '·'}</td>
                   <td>{nome(contas, l.conta_id) || <span className="tag">A definir</span>}</td><td>{l.referencia || '·'}</td>
                   <td className="r">{brl(l.valor)}{l.valor_original != null && <div style={{ fontSize: 11, color: 'var(--muted)' }}>saldo de {brl(l.valor_original)}</div>}</td><td><span className={'st ' + classeStatus(s)}>{STATUS_LABEL[s]}</span></td>
                   <td className="r" style={{ whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>

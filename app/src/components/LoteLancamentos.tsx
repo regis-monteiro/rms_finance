@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
+import { acharCadastro } from '../lib/documento';
+import OpcoesCadastro from './OpcoesCadastro';
 import CampoValor from './CampoValor';
 import DataBR from './DataBR';
 import { supabase, type Lancamento, type Status, type Conta, type Grupo, type Subgrupo, type Beneficiario } from '../lib/supabase';
@@ -25,8 +27,8 @@ export function CampoBeneficiario({ cad, valor, aoMudar, obrigatorio, placeholde
   const [txt, setTxt] = useState(rotuloB(cad.beneficiarios.find(b => b.id === valor)));
   return (
     <>
-      <input list="lote-benef" value={txt} required={obrigatorio} placeholder={placeholder || 'Nome ou CPF/CNPJ'} style={txt && !cad.beneficiarios.some(x => rotuloB(x) === txt) ? { borderColor: 'var(--neg)' } : undefined} title={txt && !cad.beneficiarios.some(x => rotuloB(x) === txt) ? 'Escolha um cadastro da lista ou apague' : ''} onChange={e => { setTxt(e.target.value); const b = cad.beneficiarios.find(x => rotuloB(x) === e.target.value); aoMudar(b || null); }} />
-      <datalist id="lote-benef">{cad.beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotuloB(b)} />)}</datalist>
+      <input list="lote-benef" value={txt} required={obrigatorio} placeholder={placeholder || 'Nome ou CPF/CNPJ'} style={txt && !acharCadastro(cad.beneficiarios, txt) ? { borderColor: 'var(--neg)' } : undefined} title={txt && !acharCadastro(cad.beneficiarios, txt) ? 'Escolha um cadastro da lista ou apague' : ''} onChange={e => { setTxt(e.target.value); aoMudar(acharCadastro(cad.beneficiarios, e.target.value) || null); }} />
+      <OpcoesCadastro id="lote-benef" lista={cad.beneficiarios} />
     </>
   );
 }
@@ -173,6 +175,11 @@ export function ModalAlterarLote({ itens, cad, hoje, aoFechar, aoSalvar }: { ite
     setProcessando(true);
     const b = cad.beneficiarios.find(x => x.id === v.benef);
     let ok = 0; const falhas: string[] = [];
+    if (usar.grupo) {
+      // guarda a classificação anterior no histórico (Plano de contas > Histórico), para poder desfazer
+      const ids = itens.filter(l => !(l.fatura_id || l.transferencia_id)).map(l => l.id);
+      if (ids.length) await supabase.rpc('registrar_reclassificacao', { p_origem: 'lote', p_descricao: `Alteração em lote (${ids.length} lançamento(s))`, p_ids: ids, p_grupo: Number(v.grupo), p_sub: v.sub ? Number(v.sub) : null });
+    }
     for (const l of itens) {
       const especial = !!(l.fatura_id || l.transferencia_id);
       const d: Record<string, unknown> = { atualizado_em: new Date().toISOString() };
@@ -211,8 +218,8 @@ export function ModalAlterarLote({ itens, cad, hoje, aoFechar, aoSalvar }: { ite
         </div>
         <div className="full lote">
         {marca('grupo', 'Grupo e subgrupo')}
-        {usar.grupo && <><label>Grupo<select required value={v.grupo} onChange={e => setV({ ...v, grupo: e.target.value, sub: '' })}><option value="" disabled>Selecione</option>{cad.grupos.filter(x => !ESPECIAIS.includes(x.nome)).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
-          <label>Subgrupo<select value={v.sub} onChange={e => setV({ ...v, sub: e.target.value })}><option value="">·</option>{cad.subgrupos.filter(s => s.grupo_id === Number(v.grupo)).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label></>}
+        {usar.grupo && <><label>Grupo<select required value={v.grupo} onChange={e => setV({ ...v, grupo: e.target.value, sub: '' })}><option value="" disabled>Selecione</option>{cad.grupos.filter(x => x.ativo && !ESPECIAIS.includes(x.nome)).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
+          <label>Subgrupo<select value={v.sub} onChange={e => setV({ ...v, sub: e.target.value })}><option value="">·</option>{cad.subgrupos.filter(s => s.grupo_id === Number(v.grupo) && s.ativo !== false).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label></>}
         </div>
         <div className="full lote">
         {marca('benef', ROTULO_PARTE)}

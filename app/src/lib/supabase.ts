@@ -21,7 +21,7 @@ export interface Lancamento {
   beneficiario_id: number | null; transferencia_id?: string | null; juros_multa?: number; juros_lanc_id?: number | null; centro_custo_id?: number | null; ofx_fitid?: string | null; titulo_id?: number | null; valor_original?: number | null; ofx_anterior?: Record<string, unknown> | null; baixa_anterior?: Record<string, unknown> | null; desconto?: number; desconto_lanc_id?: number | null; cliente_id?: number | null;
 }
 export interface Beneficiario {
-  id: number; nome: string; documento: string; nome_fantasia: string | null; email: string | null; telefone: string | null;
+  id: number; nome: string; documento: string; nome_fantasia: string | null; email: string | null; telefone: string | null; telefones?: { numero: string; descricao: string; principal: boolean }[];
   cep: string | null; logradouro: string | null; numero: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null;
   banco: string | null; agencia: string | null; conta: string | null; pix_tipo: string | null; pix_chave: string | null;
   grupo_id: number | null; subgrupo_id: number | null; observacao: string | null; ativo: boolean;

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { acharCadastro, casaBusca } from '../lib/documento';
+import OpcoesCadastro from './OpcoesCadastro';
 import CampoValor from './CampoValor';
 import DataBR from './DataBR';
 import { supabase, type Beneficiario, type CentroCusto, type Conta, type Grupo, type Lancamento, type Subgrupo } from '../lib/supabase';
@@ -45,8 +47,8 @@ export function CamposTarifa({ t, setT, data, cad, n }: { t: Tarifa; setT: (t: T
         <label>Custo unitário por boleto (R$)<CampoValor value={t.unit} onChange={e => setT({ ...t, unit: e.target.value })} /></label>
         <label>Tarifa total<input disabled value={brl(r2(n * Number(t.unit || 0)))} /></label>
         <label className="span2">Banco (fornecedor da tarifa){exigeBenefTarifa(data) ? ' *' : ' (opcional)'}
-          <input list="rec-benef-tarifa" value={txt} placeholder="Nome ou CNPJ do banco" onChange={e => { setTxt(e.target.value); const b = cad.beneficiarios.find(x => rotuloB(x) === e.target.value); setT({ ...t, benef: b ? String(b.id) : '' }); }} />
-          <datalist id="rec-benef-tarifa">{cad.beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotuloB(b)} />)}</datalist></label>
+          <input list="rec-benef-tarifa" value={txt} placeholder="Nome ou CNPJ do banco" onChange={e => { setTxt(e.target.value); const b = acharCadastro(cad.beneficiarios, e.target.value); setT({ ...t, benef: b ? String(b.id) : '' }); }} />
+          <OpcoesCadastro id="rec-benef-tarifa" lista={cad.beneficiarios} /></label>
       </>}
     </>
   );
@@ -75,7 +77,7 @@ export function AbaEmAberto({ cad, ano, mes, aoMudar }: { cad: Cad; ano: number;
     q.order('vencimento').order('favorecido').range(0, 2999).then(({ data }) => setLista((data as Lancamento[]) || []));
   }, [ano, mes, vencidas, versao]);
 
-  const linhas = useMemo(() => lista.filter(l => !busca || l.favorecido.toLowerCase().includes(busca.toLowerCase())), [lista, busca]);
+  const linhas = useMemo(() => lista.filter(l => !busca || casaBusca(busca, [l.favorecido, l.referencia], cad.beneficiarios.find(b => b.id === l.beneficiario_id)?.documento)), [lista, busca]);
   const marcados = lista.filter(l => sel.includes(l.id));
   const nomeG = (id: number) => cad.grupos.find(g => g.id === id)?.nome || '';
   const hoje = hojeISO();
@@ -221,7 +223,7 @@ export function ModalLancarRecebimentos({ cad, aoFechar, aoSalvar, aoGravar }: {
       const idTarifa = f.tarifa.houve ? await lancarTarifa(cad, n, unit, f.data, conta, f.tarifa.benef ? Number(f.tarifa.benef) : null) : null;
       const lote = await supabase.from('lotes_recebimento').insert({ tipo: 'consolidado', data: f.data, conta_id: conta, quantidade: n, tarifa_unitaria: f.tarifa.houve ? unit : 0, total, lanc_consolidado_id: r.data.id, lanc_tarifa_id: idTarifa }).select('id').single();
       if (lote.error) throw new Error(lote.error.message);
-      const itens = preenchidas.map(l => { const b = cad.beneficiarios.find(x => rotuloB(x) === l.cliente || x.nome === l.cliente); return { lote_id: lote.data.id, beneficiario_id: b?.id ?? null, nome: b?.nome || l.cliente.trim() || null, valor: r2(Number(l.valor)) }; });
+      const itens = preenchidas.map(l => { const b = acharCadastro(cad.beneficiarios, l.cliente); return { lote_id: lote.data.id, beneficiario_id: b?.id ?? null, nome: b?.nome || l.cliente.trim() || null, valor: r2(Number(l.valor)) }; });
       const ri = await supabase.from('lotes_recebimento_itens').insert(itens);
       if (ri.error) throw new Error(ri.error.message);
       try { localStorage.setItem('rms-tarifa-boleto', JSON.stringify({ unit: f.tarifa.unit, benef: f.tarifa.benef })); } catch { /* ignora */ }
@@ -255,7 +257,7 @@ export function ModalLancarRecebimentos({ cad, aoFechar, aoSalvar, aoGravar }: {
             <option value="">{'Padrão do plano: ' + (nomeCentro(cad.centros, centroPadrao(cad.grupos, cad.subgrupos, Number(f.grupo), Number(f.sub))) || 'Geral')}</option><OpcoesCentro centros={cad.centros} /></select></label>
           <span className="span2" />
           <CamposTarifa t={f.tarifa} setT={t => setF({ ...f, tarifa: t })} data={f.data} cad={cad} n={n} />
-          <datalist id="rec-clientes">{cad.beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotuloB(b)} />)}</datalist>
+          <OpcoesCadastro id="rec-clientes" lista={cad.beneficiarios} />
           <div className="full" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, maxHeight: '40vh', overflow: 'auto' }}>{coluna(0)}{coluna(metade)}</div>
           <div className="full filters" style={{ justifyContent: 'flex-end', gap: 18, margin: 0 }}>
             <span>Boletos: <b>{n}</b></span><span>Total recebido: <b className="pos">{brl(total)}</b></span>

@@ -23,7 +23,7 @@ function tendencia(a: number[]) {
 }
 
 export default function Evolucao({ conta, centro }: { conta: number | null; centro: number | null }) {
-  const { grupos, todosSub, contas, centros } = useCadastros();
+  const { todosGrupos: grupos, todosSub, contas, centros } = useCadastros();
   const linhas = useLinhasDRE();
   const anos = useAnos();
   const { usuario } = useAuth();

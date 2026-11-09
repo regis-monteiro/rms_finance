@@ -17,7 +17,7 @@ const TIPO = { corrente: 'Conta corrente', aplicacao: 'Aplicação', especie: 'E
 
 export default function Dashboard() {
   const { usuario } = useAuth();
-  const { contas, grupos } = useCadastros();
+  const { contas, todosGrupos: grupos } = useCadastros();
   const [saldos, setSaldos] = useState<Saldo[]>([]);
   const [abertos, setAbertos] = useState<Lancamento[]>([]);
   const [faturas, setFaturas] = useState<Fatura[]>([]);

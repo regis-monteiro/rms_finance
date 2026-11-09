@@ -14,7 +14,7 @@ import { useAuth } from '../lib/auth';
 const n = (v: number) => Math.round(v).toLocaleString('pt-BR');
 
 export default function DRE() {
-  const { contas, grupos, centros } = useCadastros();
+  const { contas, todosGrupos: grupos, centros } = useCadastros();
   const [centro, setCentro] = useState<number | null>(null);
   const linhas = useLinhasDRE();
   const anos = useAnos();

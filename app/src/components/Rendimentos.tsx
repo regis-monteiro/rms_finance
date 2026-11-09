@@ -20,7 +20,7 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 const mini = { padding: '3px 9px', fontSize: 12 };
 
 export default function Rendimentos({ mes }: { mes: string }) {
-  const { contas, grupos, subgrupos } = useCadastros();
+  const { contas, todosGrupos: grupos, subgrupos } = useCadastros();
   const comp = mes + '-01', compAnt = somaMeses(comp, -1);
   const hoje = hojeISO();
   const fimMes = (() => { const [a, m] = mes.split('-').map(Number); return `${mes}-${String(new Date(a, m, 0).getDate()).padStart(2, '0')}`; })();

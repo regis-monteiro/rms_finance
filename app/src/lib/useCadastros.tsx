@@ -8,13 +8,14 @@ export function useCadastros() {
   const [cartoes, setCartoes] = useState<Cartao[]>([]);
   const [beneficiarios, setBeneficiarios] = useState<Beneficiario[]>([]);
   const [todosSub, setTodosSub] = useState<Subgrupo[]>([]);
+  const [todosGrupos, setTodosGrupos] = useState<Grupo[]>([]);
   const [centros, setCentros] = useState<CentroCusto[]>([]);
   const [versao, setVersao] = useState(0);
 
   useEffect(() => {
     Promise.all([
       supabase.from('contas').select('*').order('ordem'),
-      supabase.from('grupos').select('*').eq('ativo', true).order('nome'),
+      supabase.from('grupos').select('*').order('nome'),
       supabase.from('subgrupos').select('*').order('nome'),
       supabase.from('cartoes').select('*').order('nome'),
       supabase.from('beneficiarios').select('*').order('nome'),
@@ -22,14 +23,15 @@ export function useCadastros() {
     ]).then(([c, g, s, k, b, cc]) => {
       setCentros((cc.data as CentroCusto[]) || []);
       setContas((c.data as Conta[]) || []);
-      setGrupos((g.data as Grupo[]) || []);
+      // telas de lançamento só oferecem grupos ativos; todosGrupos serve para mostrar nomes de lançamentos antigos
+      setTodosGrupos((g.data as Grupo[]) || []); setGrupos(((g.data as Grupo[]) || []).filter(x => x.ativo));
       setTodosSub((s.data as Subgrupo[]) || []); setSubgrupos(((s.data as Subgrupo[]) || []).filter(x => x.ativo !== false));
       setCartoes((k.data as Cartao[]) || []);
       setBeneficiarios((b.data as Beneficiario[]) || []);
     });
   }, [versao]);
 
-  return { todosSub, centros, contas, grupos, subgrupos, cartoes, beneficiarios, recarregar: () => setVersao(v => v + 1) };
+  return { todosGrupos, todosSub, centros, contas, grupos, subgrupos, cartoes, beneficiarios, recarregar: () => setVersao(v => v + 1) };
 }
 
 /** Rótulo do centro de custo; os subcentros do Geral aparecem como "Geral · Fiscal" */

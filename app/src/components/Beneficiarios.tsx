@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { formatarTelefone, lerTelefones, telefonePrincipal, telefoneValido, type Telefone } from '../lib/telefone';
 import { supabase, type Beneficiario, type Grupo, type Subgrupo } from '../lib/supabase';
 import { usePersistente, limparRascunhos } from '../lib/rascunho';
 import { ImportarCadastro } from './ImportarCadastro';
@@ -24,7 +25,7 @@ type Form = Partial<Beneficiario>;
 export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, aoFechar: fechar, aoExcluir, rascunho = 'benef:form' }: {
   inicial: Form; grupos: Grupo[]; subgrupos: Subgrupo[]; aoSalvar: (b: Beneficiario) => void; aoFechar: () => void; aoExcluir?: () => void; rascunho?: string;
 }) {
-  const [f, setF] = usePersistente<Form>(rascunho, () => ({ ...inicial, documento: inicial.documento ? formatarDocumento(inicial.documento) : '' }));
+  const [f, setF] = usePersistente<Form>(rascunho, () => ({ ...inicial, documento: inicial.documento ? formatarDocumento(inicial.documento) : '', telefones: lerTelefones(inicial.telefones, inicial.telefone) }));
   const aoFechar = () => { limparRascunhos(rascunho); fechar(); };
   const aoSalvar = (b: Beneficiario) => { limparRascunhos(rascunho); salvo(b); };
   const [erro, setErro] = useState('');
@@ -51,8 +52,10 @@ export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, 
     e.preventDefault(); setErro('');
     if (!f.nome?.trim()) { setErro('Informe o nome.'); return; }
     if (!docOk) { setErro('CPF ou CNPJ inválido.'); return; }
+    const tels = lerTelefones((f.telefones || []).map(t => ({ ...t, numero: soDigitos(t.numero), descricao: (t.descricao || '').trim() })));
+    if (tels.some(t => !telefoneValido(t.numero))) { setErro('Telefone incompleto: informe DDD + número (10 dígitos para fixo, 11 para celular).'); return; }
     const vazio = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v);
-    const dados = Object.fromEntries(Object.entries({ ...f, documento: soDigitos(f.documento || ''), cep: f.cep ? soDigitos(f.cep) : null }).map(([k, v]) => [k, vazio(v)]));
+    const dados = Object.fromEntries(Object.entries({ ...f, documento: soDigitos(f.documento || ''), cep: f.cep ? soDigitos(f.cep) : null, telefones: tels, telefone: telefonePrincipal(tels) }).map(([k, v]) => [k, vazio(v)]));
     delete (dados as Record<string, unknown>).criado_em;
     const q = f.id ? supabase.from('beneficiarios').update(dados).eq('id', f.id).select().single() : supabase.from('beneficiarios').insert(dados).select().single();
     const { data, error } = await q;
@@ -72,7 +75,8 @@ export function FormBeneficiario({ inicial, grupos, subgrupos, aoSalvar: salvo, 
           <label style={{ gridColumn: 'span 4' }}>Nome / Razão social *<input required value={f.nome || ''} onChange={e => set('nome', e.target.value)} /></label>
           <label style={{ gridColumn: 'span 2' }}>Nome fantasia<input value={f.nome_fantasia || ''} onChange={e => set('nome_fantasia', e.target.value)} /></label>
           <label style={{ gridColumn: 'span 2' }}>E-mail<input type="email" value={f.email || ''} onChange={e => set('email', e.target.value)} /></label>
-          <label style={{ gridColumn: 'span 2' }}>Telefone<input value={f.telefone || ''} onChange={e => set('telefone', e.target.value)} /></label>
+          <label style={{ gridColumn: 'span 2' }}>Telefone principal<input readOnly value={telefonePrincipal(f.telefones || []) || ''} placeholder="Cadastre abaixo" style={{ background: 'var(--ivory)' }} /></label>
+          <div className="full" style={{ gridColumn: '1 / -1' }}><CampoTelefones lista={f.telefones || []} aoMudar={l => set('telefones', l)} /></div>
 
           <div className="full" style={{ fontWeight: 600, color: 'var(--navy)', marginTop: 4 }}>Pagamento</div>
           <label style={{ gridColumn: 'span 2' }}>Tipo de chave PIX<select value={f.pix_tipo || ''} onChange={e => set('pix_tipo', e.target.value || null)}><option value="">·</option>{Object.entries(PIX).map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select></label>
@@ -180,5 +184,33 @@ export function AbaBeneficiarios({ beneficiarios, grupos, subgrupos, recarregar 
       {importar && <ImportarCadastro existentes={beneficiarios} aoFechar={() => setImportar(false)} aoConcluir={m => { setImportar(false); setAviso(m); setTimeout(() => setAviso(''), 8000); recarregar(); }} />}
       {edit && <FormBeneficiario inicial={edit} grupos={grupos} subgrupos={subgrupos} aoFechar={() => setEdit(null)} aoSalvar={() => { setEdit(null); recarregar(); }} aoExcluir={() => { avisar('Cadastro excluído.'); recarregar(); }} />}
     </>
+  );
+}
+
+/** Telefones do cadastro: número formatado, descrição opcional e um principal */
+function CampoTelefones({ lista, aoMudar }: { lista: Telefone[]; aoMudar: (l: Telefone[]) => void }) {
+  const muda = (i: number, t: Partial<Telefone>) => aoMudar(lista.map((x, j) => (j === i ? { ...x, ...t } : t.principal ? { ...x, principal: false } : x)));
+  const tirar = (i: number) => { const l = lista.filter((_, j) => j !== i); aoMudar(l.length && !l.some(x => x.principal) ? l.map((x, j) => ({ ...x, principal: j === 0 })) : l); };
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: lista.length ? 6 : 0 }}>
+        <b style={{ fontSize: 13, color: 'var(--navy)' }}>Telefones</b>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>marque o principal, que aparece nas listas</span>
+        <span style={{ flex: 1 }} />
+        <button type="button" className="btn ghost mini" onClick={() => aoMudar([...lista, { numero: '', descricao: '', principal: !lista.length }])}>+ Adicionar telefone</button>
+      </div>
+      {lista.map((t, i) => {
+        const d = t.numero.replace(/\D/g, '');
+        return (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '90px 180px 1fr 32px', gap: 8, alignItems: 'center', marginTop: 4 }}>
+            <label style={{ flexDirection: 'row', alignItems: 'center', gap: 6, fontWeight: 400, fontSize: 13 }}><input type="radio" name="tel-principal" checked={t.principal} onChange={() => muda(i, { principal: true })} style={{ width: 'auto' }} /> Principal</label>
+            <input value={formatarTelefone(t.numero)} placeholder="(11) 98765-4321" inputMode="tel" onChange={e => muda(i, { numero: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+              style={d && d.length < 10 ? { borderColor: 'var(--neg)' } : undefined} title={d && d.length < 10 ? 'Informe DDD + número' : ''} />
+            <input value={t.descricao} placeholder="Descrição (ex.: Financeiro, WhatsApp, João)" onChange={e => muda(i, { descricao: e.target.value })} />
+            <button type="button" className="btn ghost mini" onClick={() => tirar(i)} title="Remover">×</button>
+          </div>
+        );
+      })}
+    </div>
   );
 }

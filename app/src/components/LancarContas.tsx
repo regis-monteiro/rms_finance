@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { acharCadastro } from '../lib/documento';
+import OpcoesCadastro from './OpcoesCadastro';
 import CampoValor from './CampoValor';
 import DataBR from './DataBR';
 import { supabase, type Beneficiario, type CentroCusto, type Conta, type Grupo, type Subgrupo } from '../lib/supabase';
@@ -29,7 +31,7 @@ export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar, aoGravar }: {
   const [ok, setOk] = useState('');
   useEffect(() => { carregarDicionario().then(setDic); }, []);
 
-  const benef = (t: string) => cad.beneficiarios.find(b => rotuloB(b) === t || b.nome === t);
+  const benef = (t: string) => acharCadastro(cad.beneficiarios, t);
   const gruposTipo = cad.grupos.filter(g => !ESPECIAIS.includes(g.nome) && (receber ? g.natureza !== 'despesa' : g.natureza !== 'receita'));
   const nomeG = (id: string) => cad.grupos.find(g => String(g.id) === id)?.nome || '';
   const setL = (i: number, campo: keyof LinhaC, v: string) => {
@@ -94,7 +96,7 @@ export function ModalLancarContas({ tipo, cad, aoFechar, aoSalvar, aoGravar }: {
           <label className="span2">Centro de custo<select value={f.centro} onChange={e => setF({ ...f, centro: e.target.value })}>
             <option value="">{'Padrão do plano: ' + (nomeCentro(cad.centros, centroPadrao(cad.grupos, cad.subgrupos, Number(f.grupo), Number(f.sub))) || 'Geral')}</option><OpcoesCentro centros={cad.centros} /></select></label>
         </div>
-        <datalist id="lote-partes">{cad.beneficiarios.filter(b => b.ativo).map(b => <option key={b.id} value={rotuloB(b)} />)}</datalist>
+        <OpcoesCadastro id="lote-partes" lista={cad.beneficiarios} />
         <div style={{ maxHeight: '48vh', overflow: 'auto' }}>
           <table className="compacta lote-contas">
             <thead><tr><th style={{ width: 26 }}>#</th><th>{rotuloParte(tipo)}</th><th>Vencimento</th><th className="r">Valor (R$)</th><th>Referência</th><th>Documento</th><th>Grupo (se diferente do padrão)</th><th>Subgrupo</th>{!receber && <th>Cliente relacionado</th>}<th /></tr></thead>

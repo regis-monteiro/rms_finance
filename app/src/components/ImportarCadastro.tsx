@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { formatarTelefone } from '../lib/telefone';
 import { supabase, type Beneficiario } from '../lib/supabase';
 import { documentoValido, formatarDocumento, soDigitos } from '../lib/documento';
 
@@ -137,6 +138,12 @@ export function ImportarCadastro({ existentes, aoFechar, aoConcluir }: { existen
     if (r.cep) r.cep = soDigitos(String(r.cep)).padStart(8, '0').slice(0, 8);
     if (r.uf) r.uf = String(r.uf).toUpperCase().slice(0, 2);
     if (r.pix_chave) r.pix_tipo = tipoPix(String(r.pix_chave));
+    if (r.telefone) {
+      // um ou mais números na célula (separados por / ; ou vírgula): o primeiro vira o principal
+      const nums = String(r.telefone).split(/[/;,]|\s{2,}/).map(x => soDigitos(x)).filter(d => d.length >= 10).map(d => d.slice(-11));
+      r.telefones = nums.map((n, i) => ({ numero: n, descricao: '', principal: i === 0 }));
+      r.telefone = nums.length ? formatarTelefone(nums[0]) : r.telefone;
+    }
     return r;
   };
 

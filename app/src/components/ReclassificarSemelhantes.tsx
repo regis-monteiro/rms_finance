@@ -63,6 +63,8 @@ export default function ReclassificarSemelhantes({ pedido, nomeGrupo, nomeSub, a
   async function aplicar() {
     setProc(true); setErro('');
     const ids = sel.flatMap(g => g.ids);
+    // histórico para poder desfazer (Cadastros > Plano de contas > Histórico)
+    await supabase.rpc('registrar_reclassificacao', { p_origem: 'semelhantes', p_descricao: `Semelhantes a "${base.favorecido}"`, p_ids: ids, p_grupo: base.grupo_id, p_sub: base.subgrupo_id ?? null });
     for (let i = 0; i < ids.length; i += 200) {
       const { error } = await supabase.from('lancamentos').update({ grupo_id: base.grupo_id, subgrupo_id: base.subgrupo_id ?? null, atualizado_em: new Date().toISOString() }).in('id', ids.slice(i, i + 200));
       if (error) { setErro(error.message); setProc(false); return; }
